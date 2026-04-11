@@ -35,11 +35,28 @@ import sys
 if getattr(sys, 'frozen', False):
     # PyInstaller execution
     _APP_DIR = sys._MEIPASS                      # Temporary bundle dir (for icon)
-    _DATA_DIR = os.path.dirname(sys.executable)  # Directory of the .exe (for settings)
 else:
     # Python script execution
     _APP_DIR = os.path.dirname(os.path.abspath(__file__))
-    _DATA_DIR = _APP_DIR
+
+# Data files always go to %APPDATA%\LingoCLI\ (safe from exe copy issues)
+_DATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "LingoCLI")
+os.makedirs(_DATA_DIR, exist_ok=True)
+
+# Migration: move old files from exe directory to AppData (one-time)
+if getattr(sys, 'frozen', False):
+    _OLD_DATA_DIR = os.path.dirname(sys.executable)
+else:
+    _OLD_DATA_DIR = _APP_DIR
+for _old_file in ["terminal_ayarlar.json", "workspaces.json"]:
+    _old_path = os.path.join(_OLD_DATA_DIR, _old_file)
+    _new_path = os.path.join(_DATA_DIR, _old_file)
+    if os.path.exists(_old_path) and not os.path.exists(_new_path):
+        try:
+            import shutil
+            shutil.move(_old_path, _new_path)
+        except Exception:
+            pass
 
 # Settings file path (persistent)
 AYAR_DOSYASI = os.path.join(_DATA_DIR, "terminal_ayarlar.json")
