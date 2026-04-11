@@ -29,12 +29,22 @@ from dil import t
 API_URL = "http://localhost:1234/v1/chat/completions"
 MODEL   = "local-model"
 
-# Settings file path
-AYAR_DOSYASI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "terminal_ayarlar.json")
+import sys
 
-# App icon path
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ICON_PATH = os.path.join(_BASE_DIR, "assest", "icon.ico")
+if getattr(sys, 'frozen', False):
+    # PyInstaller execution
+    _APP_DIR = sys._MEIPASS                      # Temporary bundle dir (for icon)
+    _DATA_DIR = os.path.dirname(sys.executable)  # Directory of the .exe (for settings)
+else:
+    # Python script execution
+    _APP_DIR = os.path.dirname(os.path.abspath(__file__))
+    _DATA_DIR = _APP_DIR
+
+# Settings file path (persistent)
+AYAR_DOSYASI = os.path.join(_DATA_DIR, "terminal_ayarlar.json")
+
+# App icon path (bundled)
+ICON_PATH = os.path.join(_APP_DIR, "assest", "icon.ico")
 
 # Terminal fixed colours
 SIYAH       = "#0c0c0c"
@@ -270,13 +280,46 @@ def komutu_calistir(komut: str) -> tuple[bool, str]:
 #  SETTINGS WINDOW
 # ══════════════════════════════════════════════
 
+class KoyuRenkSecici(ctk.CTkToplevel):
+    def __init__(self, parent, mevcut_renk, title="Renk Seç"):
+        super().__init__(parent)
+        self.title(title)
+        self.geometry("380x280")
+        self.resizable(False, False)
+        self.configure(fg_color="#111111")
+        self.transient(parent)
+        self.grab_set()
+        
+        self.secilen_renk = mevcut_renk
+        
+        renkler = [
+            "#e74856", "#16c60c", "#f9f1a5", "#3b78ff", "#c678dd", "#00b9d6", 
+            "#cccccc", "#888888", "#ff9900", "#ff007f", "#00ffcc", "#8a2be2",
+            "#ffffff", "#333333", "#4caf50", "#ff5722"
+        ]
+        
+        frame = ctk.CTkFrame(self, fg_color="transparent")
+        frame.pack(pady=20, padx=20, fill="both", expand=True)
+        
+        for i, renk in enumerate(renkler):
+            satir = i // 4
+            sutun = i % 4
+            btn = ctk.CTkButton(frame, text="", width=60, height=40,
+                fg_color=renk, hover_color=renk, corner_radius=6,
+                command=lambda r=renk: self._renk_secildi(r))
+            btn.grid(row=satir, column=sutun, padx=8, pady=8)
+            
+    def _renk_secildi(self, renk):
+        self.secilen_renk = renk
+        self.destroy()
+
 class AyarlarPenceresi(ctk.CTkToplevel):
 
     def __init__(self, parent, ayarlar: dict, kaydet_callback, dil: str = "en"):
         super().__init__(parent)
         self.dil = dil
         self.title(t(dil, "settings_title"))
-        self.geometry("420x450")
+        self.geometry("450x520")
         self.resizable(False, False)
         self.configure(fg_color="#111111")
         self.transient(parent)
@@ -331,21 +374,21 @@ class AyarlarPenceresi(ctk.CTkToplevel):
 
         ctk.CTkButton(alt, text=t(dil, "btn_save"),
             font=ctk.CTkFont(family=FONT, size=13),
-            width=100, height=32,
+            width=100, height=36,
             fg_color="#1a3a1a", hover_color="#2a5a2a",
             text_color="#16c60c", corner_radius=4,
             command=self._kaydet).pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(alt, text=t(dil, "btn_reset"),
             font=ctk.CTkFont(family=FONT, size=13),
-            width=100, height=32,
+            width=100, height=36,
             fg_color="#2a2a2a", hover_color="#3a3a3a",
             text_color="#888888", corner_radius=4,
             command=self._sifirla).pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(alt, text=t(dil, "btn_cancel_set"),
             font=ctk.CTkFont(family=FONT, size=13),
-            width=80, height=32,
+            width=80, height=36,
             fg_color="#3a1a1a", hover_color="#5a2a2a",
             text_color="#e74856", corner_radius=4,
             command=self.destroy).pack(side="left")
@@ -372,14 +415,18 @@ class AyarlarPenceresi(ctk.CTkToplevel):
         self.butonlar[anahtar] = renk_btn
 
     def _renk_sec(self, anahtar: str):
-        renk = colorchooser.askcolor(
-            initialcolor=self.ayarlar[anahtar],
-            title="Select Color" if self.dil == "en" else "Renk Seç"
+        secici = KoyuRenkSecici(
+            self, 
+            self.ayarlar[anahtar], 
+            "Select Color" if self.dil == "en" else "Renk Seç"
         )
-        if renk and renk[1]:
-            self.ayarlar[anahtar] = renk[1]
+        self.wait_window(secici)
+        
+        renk = secici.secilen_renk
+        if renk:
+            self.ayarlar[anahtar] = renk
             btn = self.butonlar[anahtar]
-            btn.configure(fg_color=renk[1], hover_color=renk[1], text_color=renk[1])
+            btn.configure(fg_color=renk, hover_color=renk, text_color=renk)
 
     def _kaydet(self):
         # Save language selection
@@ -834,7 +881,30 @@ class AITerminalAsistani(ctk.CTk):
             f"{t(d, 'info_how_hdr')}\n"
             f"{t(d, 'info_how_body', n=HAM_KORUMA_SAYISI)}"
         )
-        msgbox.showinfo(t(d, "info_title"), bilgi)
+        
+        info_win = ctk.CTkToplevel(self)
+        info_win.title(t(d, "info_title"))
+        info_win.geometry("480x520")
+        info_win.resizable(False, False)
+        info_win.configure(fg_color="#111111")
+        info_win.transient(self)
+        info_win.grab_set()
+
+        txt = ctk.CTkTextbox(info_win,
+            font=ctk.CTkFont(family=FONT, size=13),
+            fg_color="#111111", text_color="#cccccc",
+            corner_radius=0, border_width=0,
+            wrap="word")
+        txt.pack(fill="both", expand=True, padx=20, pady=(20, 4))
+        txt.insert("1.0", bilgi)
+        txt.configure(state="disabled")
+
+        ctk.CTkButton(info_win, text="OK",
+            font=ctk.CTkFont(family=FONT, size=13, weight="bold"),
+            width=120, height=36,
+            fg_color="#2a2a2a", hover_color="#3a3a3a",
+            text_color="#cccccc", corner_radius=4,
+            command=info_win.destroy).pack(pady=(0, 20))
 
     # ──────────────────────────────────────────
     #  HELPERS
