@@ -33,7 +33,7 @@ CEVIRILER = {
         # ── Welcome ──
         "welcome_title":    "AI Terminal Assistant v2.1",
         "welcome_model":    "Model: Qwen 2.5 3B · Context: {ctx} tokens",
-        "welcome_db":       "Database: {n} examples · {k} categories",
+        "welcome_db":       "Powered by: LingoCLI-AI Custom Finetuned Model",
         "welcome_memory":   "Memory: Token-based + auto-summarization (unlimited session)",
         "welcome_hint":     "Type your command and press Enter. Click ⓘ for help.\n",
 
@@ -150,7 +150,7 @@ CEVIRILER = {
         # ── Welcome ──
         "welcome_title":    "AI Terminal Asistanı v2.1",
         "welcome_model":    "Model: Qwen 2.5 3B · Context: {ctx} token",
-        "welcome_db":       "Veritabanı: {n} örnek · {k} kategori",
+        "welcome_db":       "Guce Sahip: LingoCLI-AI (Özel Eğitilmiş) Model",
         "welcome_memory":   "Hafıza: Token tabanlı + otomatik özetleme (sınırsız oturum)",
         "welcome_hint":     "Komutunuzu yazıp Enter'a basın. Yardım için ⓘ butonuna tıklayın.\n",
 

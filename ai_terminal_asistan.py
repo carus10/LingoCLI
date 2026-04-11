@@ -20,8 +20,6 @@ import tkinter.colorchooser as colorchooser
 from komut_veritabani import (
     dinamik_prompt_olustur,
     TEHLIKELI_KALIPLAR,
-    toplam_ornek_sayisi,
-    KOMUT_ORNEKLERI,
 )
 from dil import t
 
@@ -129,8 +127,8 @@ def tehlike_aciklamasi(kalip: str) -> str:
 #  TOKEN ESTIMATION SYSTEM
 # ──────────────────────────────────────────────
 MODEL_CONTEXT     = 4096
-SISTEM_BUTCE      = 900
-YANIT_BUTCE       = 300
+SISTEM_BUTCE      = 150
+YANIT_BUTCE       = 1024
 GUVENLIK_MARJI    = 300
 GECMIS_BUTCE      = MODEL_CONTEXT - SISTEM_BUTCE - YANIT_BUTCE - GUVENLIK_MARJI
 OZET_TETIK_ESIGI  = int(GECMIS_BUTCE * 0.7)
@@ -217,18 +215,36 @@ def gecmisi_ozetle(mesajlar: list, dil: str = "en") -> str:
 
 
 def yaniti_ayristir(ham_metin: str) -> tuple[str, str]:
-    """Parse both TR (AÇIKLAMA/KOMUT) and EN (DESCRIPTION/COMMAND) formats."""
+    """Parse multiline responses properly for TR/EN formats, aggressively stripping Markdown."""
     aciklama = ""
     komut    = ""
-    # Try both languages
-    e = re.search(r"(?:AÇIKLAMA|DESCRIPTION)\s*:\s*(.+)", ham_metin, re.IGNORECASE)
-    if e:
-        aciklama = e.group(1).strip()
-    k = re.search(r"(?:KOMUT|COMMAND)\s*:\s*(.+)", ham_metin, re.IGNORECASE)
-    if k:
-        komut = k.group(1).strip()
-        komut = re.sub(r"```[a-z]*", "", komut).replace("```", "").strip()
-    return aciklama, komut
+    
+    # Strip markdown block quotes
+    metin = re.sub(r"```[a-zA-Z]*\n", " ", ham_metin)
+    metin = metin.replace("```", "")
+    
+    lines = metin.split("\n")
+    current_mode = None
+    
+    for line in lines:
+        upper = line.strip().upper()
+        if upper.startswith("AÇIKLAMA:") or upper.startswith("DESCRIPTION:"):
+            current_mode = "aciklama"
+            parcalar = line.split(":", 1)
+            if len(parcalar) > 1:
+                aciklama += parcalar[1].strip() + "\n"
+        elif upper.startswith("KOMUT:") or upper.startswith("COMMAND:"):
+            current_mode = "komut"
+            parcalar = line.split(":", 1)
+            if len(parcalar) > 1:
+                komut += parcalar[1].strip() + "\n"
+        else:
+            if current_mode == "aciklama" and line.strip() != "":
+                aciklama += line + "\n"
+            elif current_mode == "komut" and line.strip() != "":
+                komut += line + "\n"
+
+    return aciklama.strip(), komut.strip()
 
 
 def komutu_calistir(komut: str) -> tuple[bool, str]:
@@ -753,7 +769,7 @@ class AITerminalAsistani(ctk.CTk):
         d = self.dil
         self._terminale_yaz_satir(t(d, "welcome_title"), self.ayarlar["komut_renk"])
         self._terminale_yaz_satir(t(d, "welcome_model", ctx=MODEL_CONTEXT), ACIK_GRI)
-        self._terminale_yaz_satir(t(d, "welcome_db", n=toplam_ornek_sayisi(), k=len(KOMUT_ORNEKLERI)), ACIK_GRI)
+        self._terminale_yaz_satir(t(d, "welcome_db"), ACIK_GRI)
         self._terminale_yaz_satir(t(d, "welcome_memory"), ACIK_GRI)
         self._terminale_yaz_satir("─" * 70, GRI)
         self._terminale_yaz_satir(t(d, "welcome_hint"), ACIK_GRI)
@@ -814,8 +830,6 @@ class AITerminalAsistani(ctk.CTk):
             f"{t(d, 'info_resp_budget', n=YANIT_BUTCE)}\n"
             f"{t(d, 'info_safety', n=GUVENLIK_MARJI)}\n\n"
             f"{t(d, 'info_db_hdr')}\n"
-            f"{t(d, 'info_db_examples', n=toplam_ornek_sayisi())}\n"
-            f"{t(d, 'info_db_cats', n=len(KOMUT_ORNEKLERI))}\n"
             f"{t(d, 'info_db_danger', n=len(TEHLIKELI_KALIPLAR))}\n\n"
             f"{t(d, 'info_how_hdr')}\n"
             f"{t(d, 'info_how_body', n=HAM_KORUMA_SAYISI)}"
