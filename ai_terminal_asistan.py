@@ -1,0 +1,1088 @@
+"""
+══════════════════════════════════════════════════════════════
+  AI TERMINAL ASSISTANT v2.1
+  Local Qwen model (LM Studio) powered Windows terminal
+  assistant. Real terminal look & feel. Bilingual: EN/TR.
+══════════════════════════════════════════════════════════════
+"""
+
+import customtkinter as ctk
+import requests
+import subprocess
+import threading
+import re
+import json
+import os
+import tkinter.messagebox as msgbox
+import tkinter.colorchooser as colorchooser
+
+# ── Our modules ────────────────────────────────
+from komut_veritabani import (
+    dinamik_prompt_olustur,
+    TEHLIKELI_KALIPLAR,
+    toplam_ornek_sayisi,
+    KOMUT_ORNEKLERI,
+)
+from dil import t
+
+# ──────────────────────────────────────────────
+#  GLOBAL SETTINGS
+# ──────────────────────────────────────────────
+API_URL = "http://localhost:1234/v1/chat/completions"
+MODEL   = "local-model"
+
+# Settings file path
+AYAR_DOSYASI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "terminal_ayarlar.json")
+
+# App icon path
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ICON_PATH = os.path.join(_BASE_DIR, "assest", "icon.ico")
+
+# Terminal fixed colours
+SIYAH       = "#0c0c0c"
+KOYU_GRI    = "#1a1a1a"
+GRI         = "#333333"
+ACIK_GRI    = "#888888"
+BEYAZ       = "#cccccc"
+PARLAK_BEYAZ= "#ffffff"
+SARI        = "#f9f1a5"
+KIRMIZI     = "#e74856"
+FONT        = "Consolas"
+
+# Default customisable colours
+VARSAYILAN_KULLANICI_RENK = "#c678dd"
+VARSAYILAN_KOMUT_RENK     = "#16c60c"
+VARSAYILAN_ACIKLAMA_RENK  = "#888888"
+VARSAYILAN_PROMPT_RENK    = "#c678dd"
+
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+# ──────────────────────────────────────────────
+#  SETTINGS LOAD / SAVE
+# ──────────────────────────────────────────────
+
+def ayarlari_yukle() -> dict:
+    varsayilan = {
+        "kullanici_renk": VARSAYILAN_KULLANICI_RENK,
+        "komut_renk":     VARSAYILAN_KOMUT_RENK,
+        "aciklama_renk":  VARSAYILAN_ACIKLAMA_RENK,
+        "prompt_renk":    VARSAYILAN_PROMPT_RENK,
+        "dil":            "en",   # Default language: English
+    }
+    try:
+        if os.path.exists(AYAR_DOSYASI):
+            with open(AYAR_DOSYASI, "r", encoding="utf-8") as f:
+                kayitli = json.load(f)
+                varsayilan.update(kayitli)
+    except Exception:
+        pass
+    return varsayilan
+
+def ayarlari_kaydet(ayarlar: dict):
+    try:
+        with open(AYAR_DOSYASI, "w", encoding="utf-8") as f:
+            json.dump(ayarlar, f, indent=2)
+    except Exception:
+        pass
+
+# ──────────────────────────────────────────────
+#  SECURITY
+# ──────────────────────────────────────────────
+
+def tehlike_kontrolu(komut: str) -> tuple[bool, str]:
+    for kalip in TEHLIKELI_KALIPLAR:
+        if re.search(kalip, komut, re.IGNORECASE):
+            return (True, kalip)
+    return (False, "")
+
+def tehlike_aciklamasi(kalip: str) -> str:
+    aciklamalar = {
+        "Remove-Item.*-Recurse.*-Force":  "Bulk force delete",
+        "Remove-Item.*C:\\\\Windows":      "Delete Windows system folder",
+        "Remove-Item.*C:\\\\Program":      "Delete Program Files",
+        "Format-Volume":                   "Disk formatting",
+        "Clear-Disk":                      "Disk wipe",
+        "diskpart":                        "Disk partitioning tool",
+        "Remove-ItemProperty.*HKLM":       "Delete system registry",
+        "Set-ItemProperty.*HKLM":          "Modify system registry",
+        "reg\\s+delete":                    "Delete registry entry",
+        "Remove-LocalUser":                "Delete user account",
+        "Disable-LocalUser":               "Disable user account",
+        "Set-NetFirewallProfile.*False":    "Disable firewall",
+        "Set-MpPreference.*True":           "Disable Windows Defender",
+        "Restart-Computer":                 "Restart computer",
+        "Stop-Computer":                    "Shut down computer",
+        "shutdown":                         "Shut down computer",
+        "bcdedit":                          "Boot configuration",
+        "Invoke-WebRequest.*Invoke-Expression": "Remote code execution",
+        "iex\\s*\\(":                       "Remote code execution",
+        "DownloadString":                   "Download code from web",
+        "Set-ExecutionPolicy.*Unrestricted": "Remove script security",
+    }
+    for anahtar, aciklama in aciklamalar.items():
+        if re.search(anahtar, kalip, re.IGNORECASE):
+            return aciklama
+    return "Potentially dangerous operation"
+
+# ──────────────────────────────────────────────
+#  TOKEN ESTIMATION SYSTEM
+# ──────────────────────────────────────────────
+MODEL_CONTEXT     = 4096
+SISTEM_BUTCE      = 900
+YANIT_BUTCE       = 300
+GUVENLIK_MARJI    = 300
+GECMIS_BUTCE      = MODEL_CONTEXT - SISTEM_BUTCE - YANIT_BUTCE - GUVENLIK_MARJI
+OZET_TETIK_ESIGI  = int(GECMIS_BUTCE * 0.7)
+HAM_KORUMA_SAYISI = 3
+
+def token_tahmin(metin: str) -> int:
+    if not metin:
+        return 0
+    byte_uzunluk = len(metin.encode("utf-8", errors="replace"))
+    return int(byte_uzunluk / 3.5)
+
+def gecmis_token_sayisi(gecmis: list) -> int:
+    return sum(token_tahmin(m.get("content", "")) for m in gecmis)
+
+# ──────────────────────────────────────────────
+#  HELPER FUNCTIONS
+# ──────────────────────────────────────────────
+
+def modele_sor(kullanici_mesaji: str, gecmis: list = None, ozet: str = "", dil: str = "en") -> dict:
+    prompt = dinamik_prompt_olustur(kullanici_mesaji, dil=dil)
+    mesajlar = [{"role": "system", "content": prompt}]
+    if ozet:
+        mesajlar.append({
+            "role": "system",
+            "content": f"Previous conversation summary (for context):\n{ozet}"
+        })
+    if gecmis:
+        mesajlar.extend(gecmis)
+    mesajlar.append({"role": "user", "content": kullanici_mesaji})
+    payload = {
+        "model": MODEL,
+        "messages": mesajlar,
+        "temperature": 0.1,
+        "max_tokens": YANIT_BUTCE,
+    }
+    try:
+        yanit = requests.post(API_URL, json=payload, timeout=60)
+        yanit.raise_for_status()
+        icerik = yanit.json()["choices"][0]["message"]["content"]
+        return {"durum": "ok", "icerik": icerik}
+    except requests.exceptions.ConnectionError:
+        return {"durum": "hata", "mesaj": "connection"}
+    except requests.exceptions.Timeout:
+        return {"durum": "hata", "mesaj": "timeout"}
+    except Exception as e:
+        return {"durum": "hata", "mesaj": f"unexpected:{e}"}
+
+
+def gecmisi_ozetle(mesajlar: list, dil: str = "en") -> str:
+    satirlar = []
+    for m in mesajlar:
+        rol = "User" if m["role"] == "user" else "Assistant"
+        satirlar.append(f"{rol}: {m['content']}")
+    konusma_metni = "\n".join(satirlar)
+
+    if dil == "tr":
+        ozet_prompt = (
+            "Aşağıdaki terminal konuşmasını Türkçe olarak çok kısa özetle. "
+            "Sadece önemli bilgileri tut: hangi dosya/klasörler oluşturuldu, silindi, "
+            "nereye taşındı. Özet 3-4 cümle olsun.\n\n" + konusma_metni
+        )
+    else:
+        ozet_prompt = (
+            "Summarize the following terminal conversation very briefly in English. "
+            "Keep only important info: which files/folders were created, deleted, "
+            "moved. Summary should be 3-4 sentences.\n\n" + konusma_metni
+        )
+    payload = {
+        "model": MODEL,
+        "messages": [{"role": "user", "content": ozet_prompt}],
+        "temperature": 0.1,
+        "max_tokens": 150,
+    }
+    try:
+        yanit = requests.post(API_URL, json=payload, timeout=30)
+        yanit.raise_for_status()
+        return yanit.json()["choices"][0]["message"]["content"].strip()
+    except Exception:
+        basit = []
+        for m in mesajlar:
+            if m["role"] == "user":
+                basit.append(m["content"][:60])
+        return "Previous requests: " + "; ".join(basit[-5:])
+
+
+def yaniti_ayristir(ham_metin: str) -> tuple[str, str]:
+    """Parse both TR (AÇIKLAMA/KOMUT) and EN (DESCRIPTION/COMMAND) formats."""
+    aciklama = ""
+    komut    = ""
+    # Try both languages
+    e = re.search(r"(?:AÇIKLAMA|DESCRIPTION)\s*:\s*(.+)", ham_metin, re.IGNORECASE)
+    if e:
+        aciklama = e.group(1).strip()
+    k = re.search(r"(?:KOMUT|COMMAND)\s*:\s*(.+)", ham_metin, re.IGNORECASE)
+    if k:
+        komut = k.group(1).strip()
+        komut = re.sub(r"```[a-z]*", "", komut).replace("```", "").strip()
+    return aciklama, komut
+
+
+def komutu_calistir(komut: str) -> tuple[bool, str]:
+    utf8_on = (
+        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+        "$OutputEncoding = [System.Text.Encoding]::UTF8; "
+    )
+    try:
+        sonuc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", utf8_on + komut],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=30,
+        )
+        cikti = (sonuc.stdout or "") + (sonuc.stderr or "")
+        return (sonuc.returncode == 0, cikti.strip())
+    except subprocess.TimeoutExpired:
+        return (False, "Command timed out (30s).")
+    except Exception as e:
+        return (False, f"Command execution failed: {e}")
+
+
+# ══════════════════════════════════════════════
+#  SETTINGS WINDOW
+# ══════════════════════════════════════════════
+
+class AyarlarPenceresi(ctk.CTkToplevel):
+
+    def __init__(self, parent, ayarlar: dict, kaydet_callback, dil: str = "en"):
+        super().__init__(parent)
+        self.dil = dil
+        self.title(t(dil, "settings_title"))
+        self.geometry("420x450")
+        self.resizable(False, False)
+        self.configure(fg_color="#111111")
+        self.transient(parent)
+        self.grab_set()
+
+        self.ayarlar = ayarlar.copy()
+        self.kaydet_callback = kaydet_callback
+
+        # Title
+        ctk.CTkLabel(self, text=t(dil, "settings_colors"),
+            font=ctk.CTkFont(family=FONT, size=16, weight="bold"),
+            text_color="#cccccc").pack(pady=(20, 16))
+
+        # Colour rows
+        self.butonlar = {}
+        self._renk_satiri("kullanici_renk", t(dil, "color_user"), t(dil, "color_user_desc"))
+        self._renk_satiri("komut_renk",     t(dil, "color_cmd"),  t(dil, "color_cmd_desc"))
+        self._renk_satiri("aciklama_renk",  t(dil, "color_desc"), t(dil, "color_desc_desc"))
+        self._renk_satiri("prompt_renk",    t(dil, "color_prompt"), t(dil, "color_prompt_desc"))
+
+        # Language selector
+        dil_frame = ctk.CTkFrame(self, fg_color="transparent")
+        dil_frame.pack(fill="x", padx=24, pady=(16, 4))
+
+        sol = ctk.CTkFrame(dil_frame, fg_color="transparent")
+        sol.pack(side="left", fill="x", expand=True)
+
+        ctk.CTkLabel(sol, text=t(dil, "lang_label"),
+            font=ctk.CTkFont(family=FONT, size=13),
+            text_color="#cccccc", anchor="w").pack(anchor="w")
+        ctk.CTkLabel(sol, text=t(dil, "lang_desc"),
+            font=ctk.CTkFont(family=FONT, size=11),
+            text_color="#555555", anchor="w").pack(anchor="w")
+
+        self.dil_var = ctk.StringVar(value=self.ayarlar.get("dil", "en"))
+        self.dil_menu = ctk.CTkSegmentedButton(dil_frame,
+            values=["English", "Türkçe"],
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color="#2a2a2a",
+            selected_color="#3a3a5a",
+            selected_hover_color="#4a4a6a",
+            unselected_color="#2a2a2a",
+            unselected_hover_color="#3a3a3a",
+            text_color="#cccccc",
+            corner_radius=4)
+        self.dil_menu.set("English" if self.dil_var.get() == "en" else "Türkçe")
+        self.dil_menu.pack(side="right", padx=(8, 0))
+
+        # Bottom buttons
+        alt = ctk.CTkFrame(self, fg_color="transparent")
+        alt.pack(fill="x", padx=24, pady=(24, 16))
+
+        ctk.CTkButton(alt, text=t(dil, "btn_save"),
+            font=ctk.CTkFont(family=FONT, size=13),
+            width=100, height=32,
+            fg_color="#1a3a1a", hover_color="#2a5a2a",
+            text_color="#16c60c", corner_radius=4,
+            command=self._kaydet).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(alt, text=t(dil, "btn_reset"),
+            font=ctk.CTkFont(family=FONT, size=13),
+            width=100, height=32,
+            fg_color="#2a2a2a", hover_color="#3a3a3a",
+            text_color="#888888", corner_radius=4,
+            command=self._sifirla).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(alt, text=t(dil, "btn_cancel_set"),
+            font=ctk.CTkFont(family=FONT, size=13),
+            width=80, height=32,
+            fg_color="#3a1a1a", hover_color="#5a2a2a",
+            text_color="#e74856", corner_radius=4,
+            command=self.destroy).pack(side="left")
+
+    def _renk_satiri(self, anahtar: str, baslik: str, aciklama: str):
+        satir = ctk.CTkFrame(self, fg_color="transparent")
+        satir.pack(fill="x", padx=24, pady=4)
+        sol = ctk.CTkFrame(satir, fg_color="transparent")
+        sol.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(sol, text=baslik,
+            font=ctk.CTkFont(family=FONT, size=13),
+            text_color="#cccccc", anchor="w").pack(anchor="w")
+        ctk.CTkLabel(sol, text=aciklama,
+            font=ctk.CTkFont(family=FONT, size=11),
+            text_color="#555555", anchor="w").pack(anchor="w")
+        renk_btn = ctk.CTkButton(satir, text="  ████  ", width=80, height=28,
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color=self.ayarlar[anahtar],
+            hover_color=self.ayarlar[anahtar],
+            text_color=self.ayarlar[anahtar],
+            corner_radius=4, border_width=1, border_color="#444444",
+            command=lambda k=anahtar: self._renk_sec(k))
+        renk_btn.pack(side="right", padx=(8, 0))
+        self.butonlar[anahtar] = renk_btn
+
+    def _renk_sec(self, anahtar: str):
+        renk = colorchooser.askcolor(
+            initialcolor=self.ayarlar[anahtar],
+            title="Select Color" if self.dil == "en" else "Renk Seç"
+        )
+        if renk and renk[1]:
+            self.ayarlar[anahtar] = renk[1]
+            btn = self.butonlar[anahtar]
+            btn.configure(fg_color=renk[1], hover_color=renk[1], text_color=renk[1])
+
+    def _kaydet(self):
+        # Save language selection
+        sec = self.dil_menu.get()
+        self.ayarlar["dil"] = "en" if sec == "English" else "tr"
+        self.kaydet_callback(self.ayarlar)
+        self.destroy()
+
+    def _sifirla(self):
+        self.ayarlar.update({
+            "kullanici_renk": VARSAYILAN_KULLANICI_RENK,
+            "komut_renk":     VARSAYILAN_KOMUT_RENK,
+            "aciklama_renk":  VARSAYILAN_ACIKLAMA_RENK,
+            "prompt_renk":    VARSAYILAN_PROMPT_RENK,
+        })
+        for anahtar, btn in self.butonlar.items():
+            renk = self.ayarlar[anahtar]
+            btn.configure(fg_color=renk, hover_color=renk, text_color=renk)
+
+
+# ══════════════════════════════════════════════
+#  MAIN APPLICATION — TERMINAL UI
+# ══════════════════════════════════════════════
+
+class AITerminalAsistani(ctk.CTk):
+
+    def __init__(self):
+        super().__init__()
+
+        self.ayarlar = ayarlari_yukle()
+        self.dil = self.ayarlar.get("dil", "en")
+
+        self.title(t(self.dil, "app_title"))
+        self.geometry("900x650")
+        self.minsize(700, 500)
+        self.configure(fg_color=SIYAH)
+        if os.path.exists(ICON_PATH):
+            self.iconbitmap(ICON_PATH)
+            self.after(200, lambda: self.iconbitmap(ICON_PATH))
+
+        # Smart memory system
+        self.gecmis = []
+        self.gecmis_ozet = ""
+        self.toplam_mesaj = 0
+        self.ozetleme_sayisi = 0
+
+        # UI
+        self._baslik_cubugu()
+        self._terminal_alani()
+        self._giris_satiri()
+        self._ortala()
+        self._hosgeldin_yaz()
+
+    def _ortala(self):
+        self.update_idletasks()
+        w, h = self.winfo_width(), self.winfo_height()
+        x = (self.winfo_screenwidth()  // 2) - (w // 2)
+        y = (self.winfo_screenheight() // 2) - (h // 2)
+        self.geometry(f"{w}x{h}+{x}+{y}")
+
+    # ──────────────────────────────────────────
+    #  UI LAYOUT
+    # ──────────────────────────────────────────
+
+    def _baslik_cubugu(self):
+        bar = ctk.CTkFrame(self, fg_color="#1e1e1e", corner_radius=0, height=32)
+        bar.pack(fill="x")
+        bar.pack_propagate(False)
+
+        ctk.CTkLabel(bar, text=t(self.dil, "bar_title"),
+            font=ctk.CTkFont(family=FONT, size=12),
+            text_color=ACIK_GRI).pack(side="left", padx=8)
+
+        # Memory progress bar
+        hafiza_frame = ctk.CTkFrame(bar, fg_color="transparent", width=180)
+        hafiza_frame.pack(side="left", padx=(12, 0))
+        hafiza_frame.pack_propagate(False)
+
+        self.hafiza_lbl = ctk.CTkLabel(hafiza_frame,
+            text=f"{t(self.dil, 'memory')}: 0%",
+            font=ctk.CTkFont(family=FONT, size=10),
+            text_color=ACIK_GRI)
+        self.hafiza_lbl.pack(side="left", padx=(0, 6))
+
+        self.hafiza_bar = ctk.CTkProgressBar(hafiza_frame,
+            width=90, height=8, corner_radius=4,
+            fg_color="#2a2a2a", progress_color="#16c60c", border_width=0)
+        self.hafiza_bar.pack(side="left", pady=0)
+        self.hafiza_bar.set(0)
+
+        # Settings button
+        ctk.CTkButton(bar, text="⚙",
+            width=28, height=24,
+            font=ctk.CTkFont(family="Segoe UI", size=14),
+            fg_color="transparent", hover_color="#333333",
+            text_color=ACIK_GRI, corner_radius=4,
+            command=self._ayarlari_ac).pack(side="right", padx=4)
+
+        # Info button
+        ctk.CTkButton(bar, text="ⓘ",
+            width=28, height=24,
+            font=ctk.CTkFont(family="Segoe UI", size=13),
+            fg_color="transparent", hover_color="#333333",
+            text_color=ACIK_GRI, corner_radius=4,
+            command=self._bilgi_goster).pack(side="right", padx=0)
+
+        # New Session button
+        self.yeni_oturum_btn = ctk.CTkButton(bar, text=t(self.dil, "new_session"),
+            width=100, height=24,
+            font=ctk.CTkFont(family=FONT, size=11),
+            fg_color="transparent", hover_color="#333333",
+            text_color=ACIK_GRI, corner_radius=4,
+            command=self._yeni_oturum)
+        self.yeni_oturum_btn.pack(side="right", padx=4)
+
+        self.durum_lbl = ctk.CTkLabel(bar, text=t(self.dil, "ready"),
+            font=ctk.CTkFont(family=FONT, size=11),
+            text_color=self.ayarlar["komut_renk"])
+        self.durum_lbl.pack(side="right", padx=8)
+
+    def _terminal_alani(self):
+        self.terminal = ctk.CTkTextbox(self,
+            font=ctk.CTkFont(family=FONT, size=13),
+            fg_color=SIYAH, text_color=BEYAZ,
+            corner_radius=0, border_width=0,
+            state="disabled", wrap="word",
+            activate_scrollbars=True)
+        self.terminal.pack(fill="both", expand=True, padx=0, pady=0)
+        self._renk_tagleri_guncelle()
+
+    def _renk_tagleri_guncelle(self):
+        tb = self.terminal._textbox
+        tb.tag_configure("kullanici", foreground=self.ayarlar["kullanici_renk"])
+        tb.tag_configure("komut",     foreground=self.ayarlar["komut_renk"])
+        tb.tag_configure("aciklama",  foreground=self.ayarlar["aciklama_renk"])
+        tb.tag_configure("prompt",    foreground=self.ayarlar["prompt_renk"])
+        tb.tag_configure("sari",      foreground=SARI)
+        tb.tag_configure("kirmizi",   foreground=KIRMIZI)
+        tb.tag_configure("gri",       foreground=ACIK_GRI)
+        tb.tag_configure("beyaz",     foreground=BEYAZ)
+        tb.tag_configure("pbeyaz",    foreground=PARLAK_BEYAZ)
+        tb.tag_configure("koyu_gri",  foreground=GRI)
+
+    def _giris_satiri(self):
+        alt = ctk.CTkFrame(self, fg_color=KOYU_GRI, corner_radius=0, height=44)
+        alt.pack(fill="x")
+        alt.pack_propagate(False)
+
+        self.prompt_lbl = ctk.CTkLabel(alt, text=t(self.dil, "prompt_prefix"),
+            font=ctk.CTkFont(family=FONT, size=14, weight="bold"),
+            text_color=self.ayarlar["prompt_renk"])
+        self.prompt_lbl.pack(side="left", padx=(12, 4))
+
+        self.giris = ctk.CTkEntry(alt,
+            font=ctk.CTkFont(family=FONT, size=14),
+            fg_color=KOYU_GRI, text_color=PARLAK_BEYAZ,
+            border_width=0, corner_radius=0,
+            placeholder_text=t(self.dil, "placeholder"),
+            placeholder_text_color=GRI)
+        self.giris.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.giris.bind("<Return>", lambda e: self._gonder())
+        self.giris.focus_set()
+
+    # ──────────────────────────────────────────
+    #  TERMINAL WRITE HELPERS
+    # ──────────────────────────────────────────
+
+    def _terminale_yaz_satir(self, metin: str, renk_veya_tag: str = "beyaz"):
+        tag = self._tag_cozumle(renk_veya_tag)
+        self.terminal.configure(state="normal")
+        self.terminal._textbox.insert("end", metin + "\n", tag)
+        self.terminal.configure(state="disabled")
+        self.terminal._textbox.see("end")
+
+    def _terminale_yaz(self, metin: str, renk_veya_tag: str = "beyaz"):
+        tag = self._tag_cozumle(renk_veya_tag)
+        self.terminal.configure(state="normal")
+        self.terminal._textbox.insert("end", metin, tag)
+        self.terminal.configure(state="disabled")
+        self.terminal._textbox.see("end")
+
+    def _tag_cozumle(self, renk: str) -> str:
+        bilinen = {"kullanici","komut","aciklama","prompt","sari","kirmizi","gri","beyaz","pbeyaz","koyu_gri"}
+        if renk in bilinen:
+            return renk
+        hex_map = {
+            SARI: "sari", KIRMIZI: "kirmizi", ACIK_GRI: "gri",
+            BEYAZ: "beyaz", PARLAK_BEYAZ: "pbeyaz", GRI: "koyu_gri",
+        }
+        if renk in hex_map:
+            return hex_map[renk]
+        if renk == self.ayarlar["kullanici_renk"]: return "kullanici"
+        if renk == self.ayarlar["komut_renk"]:     return "komut"
+        if renk == self.ayarlar["aciklama_renk"]:  return "aciklama"
+        if renk == self.ayarlar["prompt_renk"]:    return "prompt"
+        return "beyaz"
+
+    # ──────────────────────────────────────────
+    #  EVENTS
+    # ──────────────────────────────────────────
+
+    def _gonder(self):
+        istek = self.giris.get().strip()
+        if not istek:
+            return
+        self._terminale_yaz(t(self.dil, "prompt_prefix") + " ", "prompt")
+        self._terminale_yaz_satir(istek, "kullanici")
+        self.giris.delete(0, "end")
+        self._yukleniyor(True)
+        gecmis_kopya = self.gecmis.copy()
+        ozet_kopya = self.gecmis_ozet
+        threading.Thread(target=self._api_sor, args=(istek, gecmis_kopya, ozet_kopya),
+                         daemon=True).start()
+
+    def _api_sor(self, istek: str, gecmis: list, ozet: str):
+        sonuc = modele_sor(istek, gecmis, ozet, dil=self.dil)
+        self.after(0, self._yanit_geldi, sonuc, istek)
+
+    def _yanit_geldi(self, sonuc: dict, kullanici_istegi: str = ""):
+        self._yukleniyor(False)
+
+        if sonuc["durum"] == "hata":
+            hata_key = sonuc["mesaj"]
+            if hata_key == "connection":
+                msg = t(self.dil, "err_connection")
+            elif hata_key == "timeout":
+                msg = t(self.dil, "err_timeout")
+            else:
+                msg = t(self.dil, "err_unexpected") + " " + hata_key.replace("unexpected:", "")
+            self._terminale_yaz_satir(f"{t(self.dil, 'err_prefix')} {msg}", "kirmizi")
+            self._terminale_yaz_satir("", "beyaz")
+            return
+
+        aciklama, komut = yaniti_ayristir(sonuc["icerik"])
+
+        # Smart memory management
+        if kullanici_istegi:
+            self.gecmis.append({"role": "user", "content": kullanici_istegi})
+            self.gecmis.append({"role": "assistant", "content": sonuc["icerik"]})
+            self.toplam_mesaj += 1
+
+            ham_tokenlar = gecmis_token_sayisi(self.gecmis)
+            ozet_tokenlar = token_tahmin(self.gecmis_ozet)
+            toplam = ham_tokenlar + ozet_tokenlar
+
+            if toplam > OZET_TETIK_ESIGI and len(self.gecmis) > HAM_KORUMA_SAYISI * 2:
+                koruma = HAM_KORUMA_SAYISI * 2
+                ozetlenecek = self.gecmis[:-koruma]
+                korunan = self.gecmis[-koruma:]
+
+                self._terminale_yaz_satir(
+                    t(self.dil, "mem_optimizing", n=len(ozetlenecek)//2), "gri")
+
+                if self.gecmis_ozet:
+                    ozet_mesaj = {"role": "assistant",
+                                 "content": f"Previous summary: {self.gecmis_ozet}"}
+                    ozetlenecek = [ozet_mesaj] + ozetlenecek
+
+                threading.Thread(
+                    target=self._ozetleme_yap,
+                    args=(ozetlenecek, korunan),
+                    daemon=True).start()
+
+            self._hafiza_guncelle()
+
+        if aciklama:
+            self._terminale_yaz_satir(f"  # {aciklama}", "aciklama")
+
+        if komut:
+            self._terminale_yaz_satir(f"  > {komut}", "komut")
+            tehlikeli, kalip = tehlike_kontrolu(komut)
+            if tehlikeli:
+                self._terminale_yaz_satir(
+                    f"{t(self.dil, 'danger_prefix')} {tehlike_aciklamasi(kalip)}", "sari")
+            self._onay_goster(komut)
+        else:
+            self._terminale_yaz_satir(t(self.dil, "cmd_not_generated"), "kirmizi")
+            self._terminale_yaz_satir("", "beyaz")
+
+    # ──────────────────────────────────────────
+    #  COMMAND EXECUTION
+    # ──────────────────────────────────────────
+
+    def _onay_goster(self, komut: str):
+        self.terminal.configure(state="normal")
+        self._onay_frame = ctk.CTkFrame(self.terminal._textbox,
+            fg_color="transparent", height=34)
+
+        ctk.CTkButton(self._onay_frame, text=t(self.dil, "btn_run"),
+            width=90, height=26,
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color="#1a3a1a", hover_color="#2a5a2a",
+            text_color="#16c60c", corner_radius=4,
+            border_width=1, border_color="#2a5a2a",
+            command=lambda: self._onayla(komut)).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(self._onay_frame, text=t(self.dil, "btn_cancel"),
+            width=70, height=26,
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color="#3a1a1a", hover_color="#5a2a2a",
+            text_color=KIRMIZI, corner_radius=4,
+            border_width=1, border_color="#5a2a2a",
+            command=self._iptal).pack(side="left")
+
+        self.terminal._textbox.window_create("end", window=self._onay_frame)
+        self.terminal._textbox.insert("end", "\n")
+        self.terminal.configure(state="disabled")
+        self.terminal._textbox.see("end")
+
+    def _onayla(self, komut: str):
+        if hasattr(self, '_onay_frame') and self._onay_frame.winfo_exists():
+            self._onay_frame.destroy()
+
+        tehlikeli, kalip = tehlike_kontrolu(komut)
+        if tehlikeli:
+            cevap = msgbox.askyesno(
+                t(self.dil, "danger_title"),
+                t(self.dil, "danger_body", d=tehlike_aciklamasi(kalip), c=komut),
+                icon="warning"
+            )
+            if not cevap:
+                self._terminale_yaz_satir(t(self.dil, "security_cancel"), "sari")
+                self._terminale_yaz_satir("", "beyaz")
+                return
+
+        self._terminale_yaz_satir(t(self.dil, "running"), "gri")
+        basarili, cikti = komutu_calistir(komut)
+
+        if cikti:
+            satirlar = cikti.split("\n")
+            max_satir = 20
+            for s in satirlar[:max_satir]:
+                self._terminale_yaz_satir(f"  {s}", "pbeyaz")
+            if len(satirlar) > max_satir:
+                self._terminale_yaz_satir(
+                    t(self.dil, "lines_more", n=len(satirlar) - max_satir), "gri")
+
+        if basarili:
+            self._terminale_yaz_satir(t(self.dil, "success"), "komut")
+        else:
+            self._terminale_yaz_satir(t(self.dil, "cmd_error"), "kirmizi")
+        self._terminale_yaz_satir("", "beyaz")
+
+    def _iptal(self):
+        if hasattr(self, '_onay_frame') and self._onay_frame.winfo_exists():
+            self._onay_frame.destroy()
+        self._terminale_yaz_satir(t(self.dil, "cancelled"), "kirmizi")
+        self._terminale_yaz_satir("", "beyaz")
+
+    # ──────────────────────────────────────────
+    #  SETTINGS
+    # ──────────────────────────────────────────
+
+    def _ayarlari_ac(self):
+        AyarlarPenceresi(self, self.ayarlar, self._ayarlar_kaydedildi, self.dil)
+
+    def _ayarlar_kaydedildi(self, yeni_ayarlar: dict):
+        eski_dil = self.dil
+        self.ayarlar = yeni_ayarlar
+        self.dil = yeni_ayarlar.get("dil", "en")
+        ayarlari_kaydet(yeni_ayarlar)
+
+        self._renk_tagleri_guncelle()
+        self.prompt_lbl.configure(text_color=self.ayarlar["prompt_renk"])
+        self.durum_lbl.configure(text_color=self.ayarlar["komut_renk"])
+
+        # If language changed, refresh all UI text
+        if eski_dil != self.dil:
+            self._dil_degistir()
+
+        self._terminale_yaz_satir(t(self.dil, "settings_saved"), "komut")
+
+    def _dil_degistir(self):
+        """Refresh all UI labels when language changes."""
+        self.title(t(self.dil, "app_title"))
+        self.durum_lbl.configure(text=t(self.dil, "ready"))
+        self.yeni_oturum_btn.configure(text=t(self.dil, "new_session"))
+        self.prompt_lbl.configure(text=t(self.dil, "prompt_prefix"))
+        self.giris.configure(placeholder_text=t(self.dil, "placeholder"))
+        self._hafiza_guncelle()
+
+    # ──────────────────────────────────────────
+    #  SESSION & INFO
+    # ──────────────────────────────────────────
+
+    def _hosgeldin_yaz(self):
+        d = self.dil
+        self._terminale_yaz_satir(t(d, "welcome_title"), self.ayarlar["komut_renk"])
+        self._terminale_yaz_satir(t(d, "welcome_model", ctx=MODEL_CONTEXT), ACIK_GRI)
+        self._terminale_yaz_satir(t(d, "welcome_db", n=toplam_ornek_sayisi(), k=len(KOMUT_ORNEKLERI)), ACIK_GRI)
+        self._terminale_yaz_satir(t(d, "welcome_memory"), ACIK_GRI)
+        self._terminale_yaz_satir("─" * 70, GRI)
+        self._terminale_yaz_satir(t(d, "welcome_hint"), ACIK_GRI)
+
+    def _yeni_oturum(self):
+        self.gecmis.clear()
+        self.gecmis_ozet = ""
+        self.toplam_mesaj = 0
+        self.ozetleme_sayisi = 0
+        self.terminal.configure(state="normal")
+        self.terminal._textbox.delete("1.0", "end")
+        self.terminal.configure(state="disabled")
+        self._hosgeldin_yaz()
+        self._terminale_yaz_satir(t(self.dil, "session_started"), "komut")
+        self._hafiza_guncelle()
+
+    def _ozetleme_yap(self, ozetlenecek: list, korunan: list):
+        yeni_ozet = gecmisi_ozetle(ozetlenecek, dil=self.dil)
+        self.after(0, self._ozetleme_tamamlandi, yeni_ozet, korunan)
+
+    def _ozetleme_tamamlandi(self, yeni_ozet: str, korunan: list):
+        eski_token = gecmis_token_sayisi(self.gecmis) + token_tahmin(self.gecmis_ozet)
+        self.gecmis_ozet = yeni_ozet
+        self.gecmis = korunan
+        self.ozetleme_sayisi += 1
+        yeni_token = gecmis_token_sayisi(self.gecmis) + token_tahmin(self.gecmis_ozet)
+        self._terminale_yaz_satir(
+            t(self.dil, "mem_done", old=eski_token, new=yeni_token, num=self.ozetleme_sayisi), "gri")
+        self._hafiza_guncelle()
+
+    def _bilgi_goster(self):
+        d = self.dil
+        ham_token = gecmis_token_sayisi(self.gecmis)
+        ozet_token = token_tahmin(self.gecmis_ozet)
+        toplam_token = ham_token + ozet_token
+        ham_mesaj = len(self.gecmis) // 2
+        kalan_token = GECMIS_BUTCE - toplam_token
+        doluluk = min(100, int((toplam_token / GECMIS_BUTCE) * 100))
+
+        dolu = int(doluluk / 5)
+        cubuk = "█" * dolu + "░" * (20 - dolu)
+
+        ozet_str = ("Yes" if d == "en" else "Var") if self.gecmis_ozet else ("No" if d == "en" else "Yok")
+
+        bilgi = (
+            f"═══ {t(d, 'welcome_title')} ═══\n\n"
+            f"{t(d, 'info_memory')}\n"
+            f"{t(d, 'info_bar', bar=cubuk, pct=doluluk)}\n"
+            f"{t(d, 'info_raw', n=ham_mesaj, t=ham_token)}\n"
+            f"{t(d, 'info_summary', s=ozet_str, t=ozet_token)}\n"
+            f"{t(d, 'info_total', t=toplam_token, b=GECMIS_BUTCE)}\n"
+            f"{t(d, 'info_remaining', r=max(0, kalan_token))}\n"
+            f"{t(d, 'info_summaries', n=self.ozetleme_sayisi)}\n"
+            f"{t(d, 'info_total_msg', n=self.toplam_mesaj)}\n\n"
+            f"{t(d, 'info_budget_hdr', ctx=MODEL_CONTEXT)}\n"
+            f"{t(d, 'info_sys_budget', n=SISTEM_BUTCE)}\n"
+            f"{t(d, 'info_hist_budget', n=GECMIS_BUTCE)}\n"
+            f"{t(d, 'info_resp_budget', n=YANIT_BUTCE)}\n"
+            f"{t(d, 'info_safety', n=GUVENLIK_MARJI)}\n\n"
+            f"{t(d, 'info_db_hdr')}\n"
+            f"{t(d, 'info_db_examples', n=toplam_ornek_sayisi())}\n"
+            f"{t(d, 'info_db_cats', n=len(KOMUT_ORNEKLERI))}\n"
+            f"{t(d, 'info_db_danger', n=len(TEHLIKELI_KALIPLAR))}\n\n"
+            f"{t(d, 'info_how_hdr')}\n"
+            f"{t(d, 'info_how_body', n=HAM_KORUMA_SAYISI)}"
+        )
+        msgbox.showinfo(t(d, "info_title"), bilgi)
+
+    # ──────────────────────────────────────────
+    #  HELPERS
+    # ──────────────────────────────────────────
+
+    def _hafiza_guncelle(self):
+        ham_token = gecmis_token_sayisi(self.gecmis)
+        ozet_token = token_tahmin(self.gecmis_ozet)
+        toplam = ham_token + ozet_token
+        oran = min(1.0, toplam / GECMIS_BUTCE)
+        yuzde = int(oran * 100)
+
+        if yuzde < 50:
+            renk = "#16c60c"
+        elif yuzde < 80:
+            renk = "#f9f1a5"
+        else:
+            renk = "#e74856"
+
+        self.hafiza_bar.set(oran)
+        self.hafiza_bar.configure(progress_color=renk)
+        self.hafiza_lbl.configure(
+            text=f"{t(self.dil, 'memory')}: {yuzde}%", text_color=renk)
+
+    def _yukleniyor(self, aktif: bool):
+        if aktif:
+            self.giris.configure(state="disabled")
+            self.durum_lbl.configure(text=t(self.dil, "thinking"), text_color=SARI)
+        else:
+            self.giris.configure(state="normal")
+            self.durum_lbl.configure(text=t(self.dil, "ready"),
+                                    text_color=self.ayarlar["komut_renk"])
+            self.giris.focus_set()
+
+
+# ══════════════════════════════════════════════
+#  BOOT SCREEN — LM Studio Auto-Launch
+# ══════════════════════════════════════════════
+
+# Known LM Studio paths (checked in order)
+LMS_PATHS = [
+    r"C:\Program Files\LM Studio\LM Studio.exe",
+    r"C:\Program Files (x86)\LM Studio\LM Studio.exe",
+    os.path.expandvars(r"%LOCALAPPDATA%\Programs\LM Studio\LM Studio.exe"),
+    os.path.expandvars(r"%LOCALAPPDATA%\LM Studio\LM Studio.exe"),
+    os.path.expandvars(r"%APPDATA%\LM Studio\LM Studio.exe"),
+]
+
+LMS_CHECK_URL = "http://localhost:1234/v1/models"
+LMS_TIMEOUT   = 90  # Max seconds to wait for server
+
+
+def sunucu_aktif_mi() -> bool:
+    """Check if LM Studio server is running on port 1234."""
+    try:
+        r = requests.get(LMS_CHECK_URL, timeout=3)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def lm_studio_yolunu_bul() -> str:
+    """Find LM Studio executable path."""
+    for yol in LMS_PATHS:
+        if os.path.exists(yol):
+            return yol
+    # Fallback: search running process
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             'Get-Process -Name "LM Studio" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Path'],
+            capture_output=True, text=True, timeout=5
+        )
+        yol = result.stdout.strip()
+        if yol and os.path.exists(yol):
+            return yol
+    except Exception:
+        pass
+    return ""
+
+
+class BootScreen(ctk.CTk):
+    """Startup screen: checks LM Studio, auto-launches if needed."""
+
+    def __init__(self):
+        super().__init__()
+
+        ayarlar = ayarlari_yukle()
+        self.dil = ayarlar.get("dil", "en")
+
+        self.title(t(self.dil, "boot_title"))
+        self.geometry("480x260")
+        self.resizable(False, False)
+        self.configure(fg_color="#0c0c0c")
+        if os.path.exists(ICON_PATH):
+            self.iconbitmap(ICON_PATH)
+            self.after(200, lambda: self.iconbitmap(ICON_PATH))
+
+        # Center
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() // 2) - 240
+        y = (self.winfo_screenheight() // 2) - 130
+        self.geometry(f"480x260+{x}+{y}")
+
+        # Header
+        ctk.CTkLabel(self, text="⚡ AI Terminal",
+            font=ctk.CTkFont(family=FONT, size=24, weight="bold"),
+            text_color="#c678dd").pack(pady=(30, 8))
+
+        # Status label
+        self.status_lbl = ctk.CTkLabel(self,
+            text=t(self.dil, "boot_checking"),
+            font=ctk.CTkFont(family=FONT, size=13),
+            text_color=ACIK_GRI)
+        self.status_lbl.pack(pady=(0, 16))
+
+        # Progress bar
+        self.progress = ctk.CTkProgressBar(self,
+            width=360, height=10, corner_radius=5,
+            fg_color="#2a2a2a", progress_color="#c678dd",
+            border_width=0, mode="indeterminate")
+        self.progress.pack(pady=(0, 16))
+        self.progress.start()
+
+        # Detail label
+        self.detail_lbl = ctk.CTkLabel(self, text="",
+            font=ctk.CTkFont(family=FONT, size=11),
+            text_color=GRI)
+        self.detail_lbl.pack(pady=(0, 8))
+
+        # Button frame (hidden initially)
+        self.btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+
+        self._cancelled = False
+        self.after(500, self._start_check)
+
+    def _start_check(self):
+        threading.Thread(target=self._check_and_launch, daemon=True).start()
+
+    def _check_and_launch(self):
+        # Step 1: Is server already running?
+        if sunucu_aktif_mi():
+            self.after(0, self._update_status, t(self.dil, "boot_found"), "#16c60c")
+            self.after(800, self._boot_success)
+            return
+
+        # Step 2: Find LM Studio
+        self.after(0, self._update_status, t(self.dil, "boot_not_found"), SARI)
+        lms_path = lm_studio_yolunu_bul()
+
+        if not lms_path:
+            self.after(0, self._show_not_installed)
+            return
+
+        # Step 3: Launch LM Studio
+        self.after(0, self._update_status, t(self.dil, "boot_launching"), "#c678dd")
+        try:
+            subprocess.Popen([lms_path], shell=False,
+                             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW)
+        except Exception:
+            # Try with shell
+            try:
+                os.startfile(lms_path)
+            except Exception:
+                self.after(0, self._show_not_installed)
+                return
+
+        # Step 4: Wait for server to come online
+        import time
+        waited = 0
+        while waited < LMS_TIMEOUT and not self._cancelled:
+            time.sleep(2)
+            waited += 2
+            self.after(0, self._update_detail,
+                       t(self.dil, "boot_waiting", s=waited))
+            if sunucu_aktif_mi():
+                self.after(0, self._update_status, t(self.dil, "boot_ready"), "#16c60c")
+                self.after(1000, self._boot_success)
+                return
+
+        if not self._cancelled:
+            self.after(0, self._show_failed)
+
+    def _update_status(self, text, color):
+        self.status_lbl.configure(text=text, text_color=color)
+
+    def _update_detail(self, text):
+        self.detail_lbl.configure(text=text)
+
+    def _boot_success(self):
+        self.progress.stop()
+        self.destroy()
+        uygulama = AITerminalAsistani()
+        uygulama.mainloop()
+
+    def _show_not_installed(self):
+        self.progress.stop()
+        self.progress.configure(mode="determinate")
+        self.progress.set(0)
+        self._update_status(t(self.dil, "boot_lms_not_installed"), KIRMIZI)
+        self._show_buttons()
+
+    def _show_failed(self):
+        self.progress.stop()
+        self.progress.configure(mode="determinate")
+        self.progress.set(0)
+        self._update_status(
+            t(self.dil, "boot_failed", s=LMS_TIMEOUT).split("\n")[0], KIRMIZI)
+        self._update_detail(
+            t(self.dil, "boot_failed", s=LMS_TIMEOUT).split("\n")[-1])
+        self._show_buttons()
+
+    def _show_buttons(self):
+        self.btn_frame.pack(pady=(8, 0))
+
+        ctk.CTkButton(self.btn_frame, text=t(self.dil, "boot_manual"),
+            width=120, height=32,
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color="#1a3a1a", hover_color="#2a5a2a",
+            text_color="#16c60c", corner_radius=4,
+            command=self._manual_start).pack(side="left", padx=6)
+
+        ctk.CTkButton(self.btn_frame, text=t(self.dil, "boot_retry"),
+            width=100, height=32,
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color="#2a2a3a", hover_color="#3a3a5a",
+            text_color="#c678dd", corner_radius=4,
+            command=self._retry).pack(side="left", padx=6)
+
+        ctk.CTkButton(self.btn_frame, text=t(self.dil, "boot_quit"),
+            width=80, height=32,
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color="#3a1a1a", hover_color="#5a2a2a",
+            text_color=KIRMIZI, corner_radius=4,
+            command=self._quit).pack(side="left", padx=6)
+
+    def _manual_start(self):
+        """Skip check, go directly to main app."""
+        self._cancelled = True
+        self.destroy()
+        uygulama = AITerminalAsistani()
+        uygulama.mainloop()
+
+    def _retry(self):
+        """Restart the check process."""
+        self._cancelled = True
+        self.btn_frame.pack_forget()
+        for w in self.btn_frame.winfo_children():
+            w.destroy()
+        self.progress.configure(mode="indeterminate")
+        self.progress.start()
+        self._update_status(t(self.dil, "boot_checking"), ACIK_GRI)
+        self._update_detail("")
+        self._cancelled = False
+        self.after(500, self._start_check)
+
+    def _quit(self):
+        self._cancelled = True
+        self.destroy()
+
+
+# ──────────────────────────────────────────────
+if __name__ == "__main__":
+    boot = BootScreen()
+    boot.mainloop()
