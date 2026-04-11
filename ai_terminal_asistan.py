@@ -495,7 +495,7 @@ class AyarlarPenceresi(ctk.CTkToplevel):
 
 class WorkspacePenceresi(ctk.CTkToplevel):
 
-    def __init__(self, parent, workspaces_data, aktif_index, secim_callback, sil_callback, dil="en"):
+    def __init__(self, parent, workspaces_data, aktif_index, secim_callback, sil_callback, cikis_callback, dil="en"):
         super().__init__(parent)
         self.title(t(dil, "ws_select"))
         self.geometry("450x380")
@@ -542,10 +542,20 @@ class WorkspacePenceresi(ctk.CTkToplevel):
                     width=40, height=28, fg_color="#3a1a1a", hover_color="#5a2a2a", text_color="#e74856",
                     command=lambda idx=i: [self.destroy(), sil_callback(idx)]).pack(side="left")
 
-        ctk.CTkButton(self, text=t(dil, "btn_cancel_set"),
+        # Bottom buttons
+        alt_frame = ctk.CTkFrame(self, fg_color="transparent")
+        alt_frame.pack(pady=16)
+
+        if aktif_index is not None:
+            ctk.CTkButton(alt_frame, text=t(dil, "ws_exit"),
+                font=ctk.CTkFont(family=FONT, size=12, weight="bold"), width=140, height=32,
+                fg_color="#2a2a3a", hover_color="#3a3a5a", text_color="#c678dd", corner_radius=4,
+                command=lambda: [self.destroy(), cikis_callback()]).pack(side="left", padx=6)
+
+        ctk.CTkButton(alt_frame, text=t(dil, "btn_cancel_set"),
             font=ctk.CTkFont(family=FONT, size=13), width=80, height=32,
             fg_color="#2a2a2a", hover_color="#3a3a3a", text_color="#cccccc",
-            command=self.destroy).pack(pady=20)
+            command=self.destroy).pack(side="left", padx=6)
 
 
 # ══════════════════════════════════════════════
@@ -981,7 +991,23 @@ class AITerminalAsistani(ctk.CTk):
         return t(self.dil, "prompt_prefix")
 
     def _workspace_menusu_ac(self):
-        WorkspacePenceresi(self, self.workspaces_data, self.aktif_ws_index, self._workspace_secildi, self._workspace_sil, self.dil)
+        WorkspacePenceresi(self, self.workspaces_data, self.aktif_ws_index, self._workspace_secildi, self._workspace_sil, self._workspace_cikis, self.dil)
+
+    def _workspace_cikis(self):
+        """Aktif workspace'ten çıkıp varsayılan moda dön."""
+        self._mevcut_oturumunu_kaydet()
+        self.aktif_ws_index = None
+        self.gecmis.clear()
+        self.gecmis_ozet = ""
+        self.toplam_mesaj = 0
+        self.ozetleme_sayisi = 0
+        self.terminal.configure(state="normal")
+        self.terminal._textbox.delete("1.0", "end")
+        self.terminal.configure(state="disabled")
+        self._hosgeldin_yaz()
+        self._terminale_yaz_satir(t(self.dil, "ws_default"), "komut")
+        self.prompt_lbl.configure(text=self._prompt_metni_al())
+        self._hafiza_guncelle()
 
     def _workspace_secildi(self, index: int, mevcut=False):
         if not mevcut:
