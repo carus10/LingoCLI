@@ -120,6 +120,25 @@ CEVIRILER = {
         "boot_retry":       "Retry",
         "boot_quit":        "Quit",
 
+        # ── Workspaces ──
+        "ws_btn":           "📁 Projects",
+        "ws_select":        "Select Project",
+        "ws_new":           "[+] New Workspace",
+        "ws_empty":         "  [Empty Slot]",
+        "ws_clear_btn":     "🗑️ Clear",
+        "ws_cleared":       "  Workspace cleared.",
+        "ws_err_dir":       "  Cannot access directory: {d}",
+        "ws_active":        "  Switched to workspace: {n}",
+        "ws_default":       "  Switched to default workspace.",
+        "ws_saving":        "  Saving workspace state...",
+        "ws_mem_summary":   "  > Memory Summary: {s}",
+        "info_ws_hdr":      "\n📁 Workspaces",
+        "info_ws_active":   "  Active workspace: {n}",
+        "info_ws_dir":      "  Directory: {d}",
+        "info_ws_none":     "  No active workspace (default mode)",
+        "info_ws_slots":    "  Slots used: {u}/3",
+        "info_ws_how":      "  Each workspace stores its own memory. When you\n  switch projects, memory is frozen to disk and\n  restored when you return.",
+
         # ── AI prompt keywords ──
         "ai_desc_keyword":  "DESCRIPTION",
         "ai_cmd_keyword":   "COMMAND",
@@ -236,6 +255,25 @@ CEVIRILER = {
         "boot_manual":      "Manuel Başlat",
         "boot_retry":       "Tekrar Dene",
         "boot_quit":        "Çıkış",
+
+        # ── Workspaces ──
+        "ws_btn":           "📁 Projeler",
+        "ws_select":        "Proje Seç",
+        "ws_new":           "[+] Yeni Çalışma Alanı",
+        "ws_empty":         "  [Boş Slot]",
+        "ws_clear_btn":     "🗑️ Temizle",
+        "ws_cleared":       "  Çalışma alanı temizlendi.",
+        "ws_err_dir":       "  Dizine erişilemiyor: {d}",
+        "ws_active":        "  Çalışma alanına geçildi: {n}",
+        "ws_default":       "  Varsayılan çalışma alanına geçildi.",
+        "ws_saving":        "  Oturum state'i kaydediliyor...",
+        "ws_mem_summary":   "  > Hafıza Özeti: {s}",
+        "info_ws_hdr":      "\n📁 Çalışma Alanları",
+        "info_ws_active":   "  Aktif çalışma alanı: {n}",
+        "info_ws_dir":      "  Dizin: {d}",
+        "info_ws_none":     "  Aktif çalışma alanı yok (varsayılan mod)",
+        "info_ws_slots":    "  Kullanılan slot: {u}/3",
+        "info_ws_how":      "  Her çalışma alanı kendi hafızasını saklar. Proje\n  değiştirdiğinizde hafıza diske dondurulur ve\n  geri döndüğünüzde otomatik yüklenir.",
 
         # ── AI prompt keywords ──
         "ai_desc_keyword":  "AÇIKLAMA",

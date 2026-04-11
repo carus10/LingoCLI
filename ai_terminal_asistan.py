@@ -15,6 +15,7 @@ import json
 import os
 import tkinter.messagebox as msgbox
 import tkinter.colorchooser as colorchooser
+import tkinter.filedialog as filedialog
 
 # ── Our modules ────────────────────────────────
 from komut_veritabani import (
@@ -42,6 +43,7 @@ else:
 
 # Settings file path (persistent)
 AYAR_DOSYASI = os.path.join(_DATA_DIR, "terminal_ayarlar.json")
+WORKSPACES_DOSYASI = os.path.join(_DATA_DIR, "workspaces.json")
 
 # App icon path (bundled)
 ICON_PATH = os.path.join(_APP_DIR, "assest", "icon.ico")
@@ -91,6 +93,29 @@ def ayarlari_kaydet(ayarlar: dict):
     try:
         with open(AYAR_DOSYASI, "w", encoding="utf-8") as f:
             json.dump(ayarlar, f, indent=2)
+    except Exception:
+        pass
+
+def workspaces_yukle() -> dict:
+    varsayilan = {
+        "slots": [None, None, None]
+    }
+    try:
+        if os.path.exists(WORKSPACES_DOSYASI):
+            with open(WORKSPACES_DOSYASI, "r", encoding="utf-8") as f:
+                kayitli = json.load(f)
+                slots = kayitli.get("slots", [None, None, None])
+                if len(slots) < 3:
+                     slots.extend([None] * (3 - len(slots)))
+                varsayilan["slots"] = slots[:3]
+    except Exception:
+        pass
+    return varsayilan
+
+def workspaces_kaydet(veriler: dict):
+    try:
+        with open(WORKSPACES_DOSYASI, "w", encoding="utf-8") as f:
+            json.dump(veriler, f, indent=2)
     except Exception:
         pass
 
@@ -157,9 +182,14 @@ def gecmis_token_sayisi(gecmis: list) -> int:
 #  HELPER FUNCTIONS
 # ──────────────────────────────────────────────
 
-def modele_sor(kullanici_mesaji: str, gecmis: list = None, ozet: str = "", dil: str = "en") -> dict:
+def modele_sor(kullanici_mesaji: str, gecmis: list = None, ozet: str = "", dil: str = "en", cwd_bilgisi: str = "") -> dict:
     prompt = dinamik_prompt_olustur(kullanici_mesaji, dil=dil)
     mesajlar = [{"role": "system", "content": prompt}]
+    if cwd_bilgisi:
+        mesajlar.append({
+            "role": "system",
+            "content": f"Current working directory: {cwd_bilgisi}"
+        })
     if ozet:
         mesajlar.append({
             "role": "system",
@@ -257,7 +287,7 @@ def yaniti_ayristir(ham_metin: str) -> tuple[str, str]:
     return aciklama.strip(), komut.strip()
 
 
-def komutu_calistir(komut: str) -> tuple[bool, str]:
+def komutu_calistir(komut: str, hedef_dizin: str = None) -> tuple[bool, str]:
     utf8_on = (
         "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
         "$OutputEncoding = [System.Text.Encoding]::UTF8; "
@@ -266,7 +296,7 @@ def komutu_calistir(komut: str) -> tuple[bool, str]:
         sonuc = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", utf8_on + komut],
             capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=30,
+            errors="replace", timeout=30, cwd=hedef_dizin
         )
         cikti = (sonuc.stdout or "") + (sonuc.stderr or "")
         return (sonuc.returncode == 0, cikti.strip())
@@ -446,6 +476,60 @@ class AyarlarPenceresi(ctk.CTkToplevel):
             renk = self.ayarlar[anahtar]
             btn.configure(fg_color=renk, hover_color=renk, text_color=renk)
 
+class WorkspacePenceresi(ctk.CTkToplevel):
+
+    def __init__(self, parent, workspaces_data, aktif_index, secim_callback, sil_callback, dil="en"):
+        super().__init__(parent)
+        self.title(t(dil, "ws_select"))
+        self.geometry("450x380")
+        self.resizable(False, False)
+        self.configure(fg_color="#111111")
+        self.transient(parent)
+        self.grab_set()
+
+        # Title
+        ctk.CTkLabel(self, text=t(dil, "ws_btn"),
+            font=ctk.CTkFont(family=FONT, size=16, weight="bold"),
+            text_color="#cccccc").pack(pady=(16, 12))
+
+        # Slots
+        slots = workspaces_data.get("slots", [None, None, None])
+        if len(slots) < 3: slots.extend([None]*(3-len(slots)))
+
+        for i in range(3):
+            slot = slots[i]
+            frame = ctk.CTkFrame(self, fg_color="#1a1a1a", corner_radius=6)
+            frame.pack(fill="x", padx=20, pady=8)
+
+            eski_font = ctk.CTkFont(family=FONT, size=13)
+            if slot is None:
+                ctk.CTkLabel(frame, text=t(dil, "ws_empty"), font=eski_font, text_color="#555555").pack(side="left", padx=12, pady=12)
+                ctk.CTkButton(frame, text=t(dil, "ws_new"), font=eski_font,
+                    width=90, height=28, fg_color="#1a3a1a", hover_color="#2a5a2a", text_color="#16c60c",
+                    command=lambda idx=i: [self.destroy(), secim_callback(idx)]).pack(side="right", padx=12, pady=12)
+            else:
+                sol = ctk.CTkFrame(frame, fg_color="transparent")
+                sol.pack(side="left", fill="both", expand=True, padx=12, pady=8)
+                ek = " [Aktif]" if i == aktif_index else ""
+                ctk.CTkLabel(sol, text=f"📂 {slot['isim']}{ek}", font=ctk.CTkFont(family=FONT, size=13, weight="bold"), text_color="#c678dd", anchor="w").pack(anchor="w")
+                ctk.CTkLabel(sol, text=slot['yol'], font=ctk.CTkFont(family=FONT, size=10), text_color="#888888", anchor="w").pack(anchor="w")
+                
+                btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+                btn_frame.pack(side="right", padx=12)
+
+                ctk.CTkButton(btn_frame, text="Seç" if dil=="tr" else "Select", font=eski_font,
+                    width=60, height=28, fg_color="#3b78ff", hover_color="#4b88ff", text_color="#ffffff",
+                    command=lambda idx=i: [self.destroy(), secim_callback(idx, mevcut=True)]).pack(side="left", padx=(0, 6))
+
+                ctk.CTkButton(btn_frame, text=t(dil, "ws_clear_btn"), font=ctk.CTkFont(family=FONT, size=11),
+                    width=40, height=28, fg_color="#3a1a1a", hover_color="#5a2a2a", text_color="#e74856",
+                    command=lambda idx=i: [self.destroy(), sil_callback(idx)]).pack(side="left")
+
+        ctk.CTkButton(self, text=t(dil, "btn_cancel_set"),
+            font=ctk.CTkFont(family=FONT, size=13), width=80, height=32,
+            fg_color="#2a2a2a", hover_color="#3a3a3a", text_color="#cccccc",
+            command=self.destroy).pack(pady=20)
+
 
 # ══════════════════════════════════════════════
 #  MAIN APPLICATION — TERMINAL UI
@@ -458,6 +542,10 @@ class AITerminalAsistani(ctk.CTk):
 
         self.ayarlar = ayarlari_yukle()
         self.dil = self.ayarlar.get("dil", "en")
+        
+        # Workspace
+        self.workspaces_data = workspaces_yukle()
+        self.aktif_ws_index = None
 
         self.title(t(self.dil, "app_title"))
         self.geometry("900x650")
@@ -480,6 +568,9 @@ class AITerminalAsistani(ctk.CTk):
         self._ortala()
         self._hosgeldin_yaz()
 
+        # Kapanırken workspace hafızasını kaydet
+        self.protocol("WM_DELETE_WINDOW", self._uygulama_kapat)
+
     def _ortala(self):
         self.update_idletasks()
         w, h = self.winfo_width(), self.winfo_height()
@@ -499,6 +590,15 @@ class AITerminalAsistani(ctk.CTk):
         ctk.CTkLabel(bar, text=t(self.dil, "bar_title"),
             font=ctk.CTkFont(family=FONT, size=12),
             text_color=ACIK_GRI).pack(side="left", padx=8)
+
+        # Workspace button
+        self.ws_btn = ctk.CTkButton(bar, text=t(self.dil, "ws_btn"),
+            width=100, height=24,
+            font=ctk.CTkFont(family=FONT, size=11, weight="bold"),
+            fg_color="#1a1e3a", hover_color="#2a2e4a",
+            text_color="#c678dd", corner_radius=4,
+            command=self._workspace_menusu_ac)
+        self.ws_btn.pack(side="left", padx=4)
 
         # Memory progress bar
         hafiza_frame = ctk.CTkFrame(bar, fg_color="transparent", width=180)
@@ -575,7 +675,7 @@ class AITerminalAsistani(ctk.CTk):
         alt.pack(fill="x")
         alt.pack_propagate(False)
 
-        self.prompt_lbl = ctk.CTkLabel(alt, text=t(self.dil, "prompt_prefix"),
+        self.prompt_lbl = ctk.CTkLabel(alt, text=self._prompt_metni_al(),
             font=ctk.CTkFont(family=FONT, size=14, weight="bold"),
             text_color=self.ayarlar["prompt_renk"])
         self.prompt_lbl.pack(side="left", padx=(12, 4))
@@ -632,7 +732,7 @@ class AITerminalAsistani(ctk.CTk):
         istek = self.giris.get().strip()
         if not istek:
             return
-        self._terminale_yaz(t(self.dil, "prompt_prefix") + " ", "prompt")
+        self._terminale_yaz(self._prompt_metni_al() + " ", "prompt")
         self._terminale_yaz_satir(istek, "kullanici")
         self.giris.delete(0, "end")
         self._yukleniyor(True)
@@ -642,7 +742,13 @@ class AITerminalAsistani(ctk.CTk):
                          daemon=True).start()
 
     def _api_sor(self, istek: str, gecmis: list, ozet: str):
-        sonuc = modele_sor(istek, gecmis, ozet, dil=self.dil)
+        # Workspace cwd bilgisini modele ilet
+        cwd_bilgisi = ""
+        if self.aktif_ws_index is not None:
+            slot = self.workspaces_data["slots"][self.aktif_ws_index]
+            if slot and "yol" in slot:
+                cwd_bilgisi = slot["yol"]
+        sonuc = modele_sor(istek, gecmis, ozet, dil=self.dil, cwd_bilgisi=cwd_bilgisi)
         self.after(0, self._yanit_geldi, sonuc, istek)
 
     def _yanit_geldi(self, sonuc: dict, kullanici_istegi: str = ""):
@@ -753,7 +859,15 @@ class AITerminalAsistani(ctk.CTk):
                 return
 
         self._terminale_yaz_satir(t(self.dil, "running"), "gri")
-        basarili, cikti = komutu_calistir(komut)
+        
+        # Cwd belirleme
+        hedef_klasor = None
+        if self.aktif_ws_index is not None:
+            slot = self.workspaces_data["slots"][self.aktif_ws_index]
+            if slot and "yol" in slot:
+                hedef_klasor = slot["yol"]
+                
+        basarili, cikti = komutu_calistir(komut, hedef_dizin=hedef_klasor)
 
         if cikti:
             satirlar = cikti.split("\n")
@@ -804,9 +918,15 @@ class AITerminalAsistani(ctk.CTk):
         self.title(t(self.dil, "app_title"))
         self.durum_lbl.configure(text=t(self.dil, "ready"))
         self.yeni_oturum_btn.configure(text=t(self.dil, "new_session"))
-        self.prompt_lbl.configure(text=t(self.dil, "prompt_prefix"))
+        self.ws_btn.configure(text=t(self.dil, "ws_btn"))
+        self.prompt_lbl.configure(text=self._prompt_metni_al())
         self.giris.configure(placeholder_text=t(self.dil, "placeholder"))
         self._hafiza_guncelle()
+
+    def _uygulama_kapat(self):
+        """Uygulama kapanırken workspace hafızasını kaydet."""
+        self._mevcut_oturumunu_kaydet()
+        self.destroy()
 
     # ──────────────────────────────────────────
     #  SESSION & INFO
@@ -821,7 +941,9 @@ class AITerminalAsistani(ctk.CTk):
         self._terminale_yaz_satir("─" * 70, GRI)
         self._terminale_yaz_satir(t(d, "welcome_hint"), ACIK_GRI)
 
-    def _yeni_oturum(self):
+    def _yeni_oturum(self, yaz=True):
+        self._mevcut_oturumunu_kaydet()
+        
         self.gecmis.clear()
         self.gecmis_ozet = ""
         self.toplam_mesaj = 0
@@ -830,8 +952,84 @@ class AITerminalAsistani(ctk.CTk):
         self.terminal._textbox.delete("1.0", "end")
         self.terminal.configure(state="disabled")
         self._hosgeldin_yaz()
-        self._terminale_yaz_satir(t(self.dil, "session_started"), "komut")
+        if yaz:
+            self._terminale_yaz_satir(t(self.dil, "session_started"), "komut")
         self._hafiza_guncelle()
+
+    def _prompt_metni_al(self):
+        if hasattr(self, "aktif_ws_index") and self.aktif_ws_index is not None:
+            slot = self.workspaces_data["slots"][self.aktif_ws_index]
+            if slot:
+                return f"{slot['isim']} >"
+        return t(self.dil, "prompt_prefix")
+
+    def _workspace_menusu_ac(self):
+        WorkspacePenceresi(self, self.workspaces_data, self.aktif_ws_index, self._workspace_secildi, self._workspace_sil, self.dil)
+
+    def _workspace_secildi(self, index: int, mevcut=False):
+        if not mevcut:
+            klasor = filedialog.askdirectory(title=t(self.dil, "ws_select"))
+            if not klasor: return
+            # Normalize path separators for Windows
+            klasor = os.path.normpath(klasor)
+            isim = os.path.basename(klasor) or klasor
+            self.workspaces_data["slots"][index] = {
+                "isim": isim,
+                "yol": klasor,
+                "gecmis": [],
+                "gecmis_ozet": "",
+                "toplam_mesaj": 0,
+                "ozetleme_sayisi": 0
+            }
+            workspaces_kaydet(self.workspaces_data)
+
+        # Dizin hala var mı kontrol et
+        secili = self.workspaces_data["slots"][index]
+        if secili and not os.path.isdir(secili.get("yol", "")):
+            self._terminale_yaz_satir(t(self.dil, "ws_err_dir", d=secili.get("yol", "?")), "kirmizi")
+            return
+
+        self._mevcut_oturumunu_kaydet()
+
+        self.aktif_ws_index = index
+        
+        # Load memory (KOPYA al, referans değil — JSON verisini korumak için)
+        self.gecmis = list(secili.get("gecmis", []))
+        self.gecmis_ozet = secili.get("gecmis_ozet", "")
+        self.toplam_mesaj = secili.get("toplam_mesaj", 0)
+        self.ozetleme_sayisi = secili.get("ozetleme_sayisi", 0)
+        
+        self.terminal.configure(state="normal")
+        self.terminal._textbox.delete("1.0", "end")
+        self.terminal.configure(state="disabled")
+        self._hosgeldin_yaz()
+        self._terminale_yaz_satir(t(self.dil, "ws_active", n=secili['isim']), "komut")
+        if self.gecmis_ozet:
+            self._terminale_yaz_satir(t(self.dil, "ws_mem_summary", s=self.gecmis_ozet[:80] + "..."), "gri")
+        
+        self.prompt_lbl.configure(text=self._prompt_metni_al())
+        self._hafiza_guncelle()
+
+    def _workspace_sil(self, index: int):
+        self.workspaces_data["slots"][index] = None
+        workspaces_kaydet(self.workspaces_data)
+        if self.aktif_ws_index == index:
+            self.aktif_ws_index = None
+            self._yeni_oturum(yaz=False)
+            self._terminale_yaz_satir(t(self.dil, "ws_default"), "komut")
+            self.prompt_lbl.configure(text=self._prompt_metni_al())
+        self._terminale_yaz_satir(t(self.dil, "ws_cleared"), "aciklama")
+
+    def _mevcut_oturumunu_kaydet(self):
+        if hasattr(self, "aktif_ws_index") and self.aktif_ws_index is not None:
+            self._terminale_yaz_satir(t(self.dil, "ws_saving"), "gri")
+            slot = self.workspaces_data["slots"][self.aktif_ws_index]
+            if slot:
+                slot["gecmis"] = self.gecmis.copy()
+                slot["gecmis_ozet"] = self.gecmis_ozet
+                slot["toplam_mesaj"] = self.toplam_mesaj
+                slot["ozetleme_sayisi"] = self.ozetleme_sayisi
+            workspaces_kaydet(self.workspaces_data)
 
     def _ozetleme_yap(self, ozetlenecek: list, korunan: list):
         yeni_ozet = gecmisi_ozetle(ozetlenecek, dil=self.dil)
@@ -877,14 +1075,30 @@ class AITerminalAsistani(ctk.CTk):
             f"{t(d, 'info_resp_budget', n=YANIT_BUTCE)}\n"
             f"{t(d, 'info_safety', n=GUVENLIK_MARJI)}\n\n"
             f"{t(d, 'info_db_hdr')}\n"
-            f"{t(d, 'info_db_danger', n=len(TEHLIKELI_KALIPLAR))}\n\n"
+            f"{t(d, 'info_db_danger', n=len(TEHLIKELI_KALIPLAR))}\n"
+        )
+
+        # Workspace info
+        kullanilan_slot = sum(1 for s in self.workspaces_data.get("slots", []) if s is not None)
+        bilgi += f"{t(d, 'info_ws_hdr')}\n"
+        if self.aktif_ws_index is not None:
+            slot = self.workspaces_data["slots"][self.aktif_ws_index]
+            if slot:
+                bilgi += f"{t(d, 'info_ws_active', n=slot['isim'])}\n"
+                bilgi += f"{t(d, 'info_ws_dir', d=slot['yol'])}\n"
+        else:
+            bilgi += f"{t(d, 'info_ws_none')}\n"
+        bilgi += f"{t(d, 'info_ws_slots', u=kullanilan_slot)}\n"
+        bilgi += f"{t(d, 'info_ws_how')}\n\n"
+
+        bilgi += (
             f"{t(d, 'info_how_hdr')}\n"
             f"{t(d, 'info_how_body', n=HAM_KORUMA_SAYISI)}"
         )
         
         info_win = ctk.CTkToplevel(self)
         info_win.title(t(d, "info_title"))
-        info_win.geometry("480x520")
+        info_win.geometry("480x620")
         info_win.resizable(False, False)
         info_win.configure(fg_color="#111111")
         info_win.transient(self)
