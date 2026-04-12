@@ -1234,6 +1234,21 @@ class AITerminalAsistani(ctk.CTk):
         self.hafiza_lbl.configure(
             text=f"{t(self.dil, 'memory')}: {yuzde}%", text_color=renk)
 
+    def _dinamik_model_tespit_et(self):
+        """LM Studio'daki aktif modeli algılar."""
+        try:
+            r = requests.get(LMS_CHECK_URL, timeout=2)
+            if r.status_code == 200:
+                data = r.json()
+                if "data" in data and len(data["data"]) > 0:
+                    model_id = data["data"][0]["id"]
+                    # İsmi biraz sadeleştirelim
+                    self.model_adi = model_id.split("/")[-1].replace(".gguf", "").replace("-", " ").title()
+                    return
+        except:
+            pass
+        self.model_adi = "Local AI"
+
     def _yukleniyor(self, aktif: bool):
         if aktif:
             self.giris.configure(state="disabled")
@@ -1469,23 +1484,6 @@ class BootScreen(ctk.CTk):
     def _quit(self):
         self._cancelled = True
         self.destroy()
-
-
-# ──────────────────────────────────────────────
-    def _dinamik_model_tespit_et(self):
-        """LM Studio'daki aktif modeli algılar."""
-        try:
-            r = requests.get(LMS_CHECK_URL, timeout=2)
-            if r.status_code == 200:
-                data = r.json()
-                if "data" in data and len(data["data"]) > 0:
-                    model_id = data["data"][0]["id"]
-                    # İsmi biraz sadeleştirelim
-                    self.model_adi = model_id.split("/")[-1].replace(".gguf", "").replace("-", " ").title()
-                    return
-        except:
-            pass
-        self.model_adi = "Local AI"
 
 if __name__ == "__main__":
     boot = BootScreen()
