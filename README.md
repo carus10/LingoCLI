@@ -9,7 +9,7 @@ Runs entirely on your machine — no internet, no API keys, no cloud. Just you a
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)](https://python.org)
 [![LM Studio](https://img.shields.io/badge/LM_Studio-Required-purple?logo=data:image/png;base64,iVBORw0KGgo=)](https://lmstudio.ai)
-[![Model](https://img.shields.io/badge/Model-LingoCLI--V7-orange)](https://huggingface.co/Carus10/LingoCLI-Qwen-3B-V7)
+[![Model](https://img.shields.io/badge/Model-LingoCLI--V7-orange)](https://huggingface.co/Cihan10/LingoCLI-Qwen-3B-V7-Q4_K_M-GGUF)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows)](https://www.microsoft.com/windows)
 
@@ -27,7 +27,7 @@ You type:  "create a folder called Projects on desktop"
 AI runs:   New-Item -ItemType Directory -Path "$env:USERPROFILE\Desktop\Projects"
 ```
 
-Everything runs **locally** on your computer using [LM Studio](https://lmstudio.ai) and our **Exclusively Finetuned Qwen 2.5 3B** model (`Carus10/LingoCLI-Qwen-3B-V7`). No data leaves your machine.
+Everything runs **locally** on your computer using [LM Studio](https://lmstudio.ai) and our **Exclusively Finetuned Qwen 2.5 3B** model (`Cihan10/LingoCLI-Qwen-3B-V7-Q4_K_M-GGUF`). No data leaves your machine.
 
 ---
 
@@ -199,7 +199,7 @@ LingoCLI uses a **3-layer memory architecture** designed to provide unlimited co
 ### Step 2: Download the LingoCLI AI Model
 
 1. In LM Studio, click the **Search** bar (magnifying glass) at the left menu.
-2. Search exactly for: **`Carus10/LingoCLI-Qwen-3B-V7`**
+2. Search exactly for: **`Cihan10/LingoCLI-Qwen-3B-V7-Q4_K_M-GGUF`**
 3. Download the **GGUF** version (usually 1.93 GB).
 4. Wait for the download to complete.
 
