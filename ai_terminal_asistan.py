@@ -272,25 +272,37 @@ def gecmisi_ozetle(mesajlar: list, dil: str = "en") -> str:
 
 
 def yaniti_ayristir(ham_metin: str) -> tuple[str, str]:
-    """Modern V6: Parse strict JSON responses from finetuned models. Falls back to Regex parsing for legacy data."""
+    """Parse JSON responses from models. Robust against markdown tags and conversational noise."""
     metin = ham_metin.strip()
     
-    # Markdown block stripping just in case the model hallucinates formatting around the JSON
-    metin = re.sub(r"^```[a-zA-Z]*\n", "", metin)
-    metin = re.sub(r"\n```$", "", metin)
-    metin = metin.strip()
+    # 1. Try to find potential JSON inside the text (handles markdown or conversational prefix/suffix)
+    json_bloğu = metin
+    match = re.search(r"(\{.*\})", metin, re.DOTALL)
+    if match:
+        json_bloğu = match.group(1)
     
-    # Try parsing V6 JSON first
+    # 2. Try parsing
     try:
-        data = json.loads(metin)
-        if data.get("type") in ["error", "refusal"]:
+        data = json.loads(json_bloğu)
+        cevap_tipi = data.get("type", "")
+        if cevap_tipi in ["error", "refusal"]:
             return data.get("content", ""), ""
             
-        return data.get("explain", ""), data.get("content", "")
+        aciklama = data.get("explain") or data.get("explanation") or ""
+        komut = data.get("content") or data.get("command") or ""
+        
+        # If the model returned keys we can use but not perfectly formatted
+        if not komut and not aciklama and len(data) > 0:
+            for k, v in data.items():
+                if isinstance(v, str) and any(x in v.lower() for x in ["mkdir", "ls", "get-", "set-", "rm ", "cd "]):
+                     komut = v
+                     break
+        
+        return aciklama.strip(), komut.strip()
     except Exception:
         pass
         
-    # LEGACY FALLBACK
+    # 3. LEGACY FALLBACK: Traditional key-value parsing for non-JSON models
     aciklama = ""
     komut = ""
     
@@ -298,6 +310,7 @@ def yaniti_ayristir(ham_metin: str) -> tuple[str, str]:
     metin = metin.replace("```", "")
     
     if not re.search(r"(AÇIKLAMA|DESCRIPTION|KOMUT|COMMAND)\s*:", metin, re.IGNORECASE):
+        # Best guess: if it's not JSON and not labeled, it might be just the command
         return "", metin.strip()
         
     lines = metin.split("\n")
@@ -309,18 +322,18 @@ def yaniti_ayristir(ham_metin: str) -> tuple[str, str]:
             current_mode = "aciklama"
             parcalar = line.split(":", 1)
             if len(parcalar) > 1:
-                aciklama += parcalar[1].strip() + "\n"
+                aciklama += parcalar[1].strip() + " "
         elif upper.startswith("KOMUT:") or upper.startswith("COMMAND:"):
             current_mode = "komut"
             parcalar = line.split(":", 1)
             if len(parcalar) > 1:
-                komut += parcalar[1].strip() + "\n"
+                komut += parcalar[1].strip() + " "
         else:
             if current_mode == "aciklama" and line.strip() != "":
-                aciklama += line + "\n"
+                aciklama += line.strip() + " "
             elif current_mode == "komut" and line.strip() != "":
-                komut += line + "\n"
-
+                komut += line.strip() + " "
+                
     return aciklama.strip(), komut.strip()
 
 
@@ -330,10 +343,14 @@ def komutu_calistir(komut: str, hedef_dizin: str = None) -> tuple[bool, str]:
         "$OutputEncoding = [System.Text.Encoding]::UTF8; "
     )
     try:
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        
         sonuc = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", utf8_on + komut],
             capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=30, cwd=hedef_dizin
+            errors="replace", timeout=30, cwd=hedef_dizin,
+            creationflags=subprocess.CREATE_NO_WINDOW
         )
         cikti = (sonuc.stdout or "") + (sonuc.stderr or "")
         return (sonuc.returncode == 0, cikti.strip())
@@ -613,6 +630,11 @@ class AITerminalAsistani(ctk.CTk):
         self._terminal_alani()
         self._giris_satiri()
         self._ortala()
+        
+        # Dinamik Model Tespiti
+        self.model_adi = "..."
+        self.after(500, self._dinamik_model_tespit_et)
+        
         self._hosgeldin_yaz()
 
         # Kapanırken workspace hafızasını kaydet
@@ -906,7 +928,11 @@ class AITerminalAsistani(ctk.CTk):
                 return
 
         self._terminale_yaz_satir(t(self.dil, "running"), "gri")
+        self._yukleniyor(True)
         
+        threading.Thread(target=self._komut_calistir_arkaplan, args=(komut,), daemon=True).start()
+
+    def _komut_calistir_arkaplan(self, komut: str):
         # Cwd belirleme
         hedef_klasor = None
         if self.aktif_ws_index is not None:
@@ -915,7 +941,10 @@ class AITerminalAsistani(ctk.CTk):
                 hedef_klasor = slot["yol"]
                 
         basarili, cikti = komutu_calistir(komut, hedef_dizin=hedef_klasor)
+        self.after(0, self._komut_tamamlandi, basarili, cikti)
 
+    def _komut_tamamlandi(self, basarili: bool, cikti: str):
+        self._yukleniyor(False)
         if cikti:
             satirlar = cikti.split("\n")
             max_satir = 20
@@ -982,8 +1011,7 @@ class AITerminalAsistani(ctk.CTk):
     def _hosgeldin_yaz(self):
         d = self.dil
         self._terminale_yaz_satir(t(d, "welcome_title"), self.ayarlar["komut_renk"])
-        self._terminale_yaz_satir(t(d, "welcome_model", ctx=MODEL_CONTEXT), ACIK_GRI)
-        self._terminale_yaz_satir(t(d, "welcome_db"), ACIK_GRI)
+        self._terminale_yaz_satir(t(d, "welcome_model", ctx=MODEL_CONTEXT).replace("Qwen 2.5 3B", self.model_adi), ACIK_GRI)
         self._terminale_yaz_satir(t(d, "welcome_memory"), ACIK_GRI)
         self._terminale_yaz_satir("─" * 70, GRI)
         self._terminale_yaz_satir(t(d, "welcome_hint"), ACIK_GRI)
@@ -1127,12 +1155,12 @@ class AITerminalAsistani(ctk.CTk):
             f"{t(d, 'info_memory')}\n"
             f"{t(d, 'info_bar', bar=cubuk, pct=doluluk)}\n"
             f"{t(d, 'info_raw', n=ham_mesaj, t=ham_token)}\n"
-            f"{t(d, 'info_summary', s=ozet_str, t=ozet_token)}\n"
+            f"{t(d, 'info_summary', s=oz_str, t=ozet_token)}\n"
             f"{t(d, 'info_total', t=toplam_token, b=GECMIS_BUTCE)}\n"
             f"{t(d, 'info_remaining', r=max(0, kalan_token))}\n"
             f"{t(d, 'info_summaries', n=self.ozetleme_sayisi)}\n"
             f"{t(d, 'info_total_msg', n=self.toplam_mesaj)}\n\n"
-            f"{t(d, 'info_budget_hdr', ctx=MODEL_CONTEXT)}\n"
+            f"⚙️ {t(d, 'info_budget_hdr', ctx=MODEL_CONTEXT).replace('Qwen 2.5 3B', self.model_adi)}\n"
             f"{t(d, 'info_sys_budget', n=SISTEM_BUTCE)}\n"
             f"{t(d, 'info_hist_budget', n=GECMIS_BUTCE)}\n"
             f"{t(d, 'info_resp_budget', n=YANIT_BUTCE)}\n"
@@ -1444,6 +1472,21 @@ class BootScreen(ctk.CTk):
 
 
 # ──────────────────────────────────────────────
+    def _dinamik_model_tespit_et(self):
+        """LM Studio'daki aktif modeli algılar."""
+        try:
+            r = requests.get(LMS_CHECK_URL, timeout=2)
+            if r.status_code == 200:
+                data = r.json()
+                if "data" in data and len(data["data"]) > 0:
+                    model_id = data["data"][0]["id"]
+                    # İsmi biraz sadeleştirelim
+                    self.model_adi = model_id.split("/")[-1].replace(".gguf", "").replace("-", " ").title()
+                    return
+        except:
+            pass
+        self.model_adi = "Local AI"
+
 if __name__ == "__main__":
     boot = BootScreen()
     boot.mainloop()
