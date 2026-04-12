@@ -31,14 +31,17 @@ Everything runs **locally** on your computer using [LM Studio](https://lmstudio.
 
 ---
 
-## 🧠 The Custom Finetuned Model
+## 🧠 The Custom V7 Master Model (100K Dataset)
 
 Unlike other wrappers that use massive, complicated prompts to force a base model to output code, **LingoCLI runs on its own Finetuned Model**. 
 
-We took Qwen 2.5 3B and trained it on a custom **4700+ line bilingual (English/Turkish) DevOps dataset**. As a result:
-* The model natively understands terminal execution intents.
-* It always outputs in an exact `AÇIKLAMA:/KOMUT:` format without heavy prompting.
-* It achieves lower latency and zero "hallucination" on syntax formatting.
+We took Qwen 2.5 3B Instruct and trained it on a massive, custom **100,000+ line bilingual (English/Turkish) "V7 Master" dataset**. 
+
+### What makes this dataset a masterpiece?
+* **100% JSON Structural Output:** The model is trained to strictly output function-calling style JSON objects (`{"type": "command", "content": "..."}`), eliminating markdown hallucinations forever.
+* **Extreme Regex Safety & Contrast Learning:** The model was taught *what NOT to do*. It was trained on explicit self-correcting pairs—it immediately blocks destructive logic (`Remove-Item C:\Windows`, `rm -rf /`) with a strict `REFUSED` JSON output, while easily performing granular cleanup when safe.
+* **Real-world Edge Cases:** Trained on hundreds of developer typos (`gti clone`, `npm isnyall`), half-commands, mixed-language prompts, and whitespace to prevent freezing and ensure robust error handling (`ERROR: invalid input`).
+* **Raw Execution Speed:** By enforcing strict JSON formatting directly inside the neural weights, we removed all reliance on Python regex parsing, making the LingoCLI interpreter lightning fast.
 
 ---
 

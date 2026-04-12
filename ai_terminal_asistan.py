@@ -272,14 +272,34 @@ def gecmisi_ozetle(mesajlar: list, dil: str = "en") -> str:
 
 
 def yaniti_ayristir(ham_metin: str) -> tuple[str, str]:
-    """Parse multiline responses properly for TR/EN formats, aggressively stripping Markdown."""
-    aciklama = ""
-    komut    = ""
+    """Modern V6: Parse strict JSON responses from finetuned models. Falls back to Regex parsing for legacy data."""
+    metin = ham_metin.strip()
     
-    # Strip markdown block quotes
+    # Markdown block stripping just in case the model hallucinates formatting around the JSON
+    metin = re.sub(r"^```[a-zA-Z]*\n", "", metin)
+    metin = re.sub(r"\n```$", "", metin)
+    metin = metin.strip()
+    
+    # Try parsing V6 JSON first
+    try:
+        data = json.loads(metin)
+        if data.get("type") in ["error", "refusal"]:
+            return data.get("content", ""), ""
+            
+        return data.get("explain", ""), data.get("content", "")
+    except Exception:
+        pass
+        
+    # LEGACY FALLBACK
+    aciklama = ""
+    komut = ""
+    
     metin = re.sub(r"```[a-zA-Z]*\n", " ", ham_metin)
     metin = metin.replace("```", "")
     
+    if not re.search(r"(AÇIKLAMA|DESCRIPTION|KOMUT|COMMAND)\s*:", metin, re.IGNORECASE):
+        return "", metin.strip()
+        
     lines = metin.split("\n")
     current_mode = None
     

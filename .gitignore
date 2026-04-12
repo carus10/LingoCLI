@@ -22,3 +22,9 @@ Thumbs.db
 
 # App generated
 terminal_ayarlar.json
+workspaces.json
+
+# Datasets and AI Weight Files
+*.jsonl
+*.gguf
+*.safetensors
