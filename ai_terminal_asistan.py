@@ -199,63 +199,65 @@ def gecmis_token_sayisi(gecmis: list) -> int:
 #  HELPER FUNCTIONS
 # ──────────────────────────────────────────────
 
-def modele_sor(kullanici_mesaji: str, gecmis: list = None, ozet: str = "", dil: str = "en", cwd_bilgisi: str = "") -> dict:
-    prompt = dinamik_prompt_olustur(kullanici_mesaji, dil=dil)
+def log_mesaj(mesaj: str, seviye: str = "INFO"):
+    """Terminal asistanı için basit loglama."""
+    print(f"[{seviye}] {mesaj}")
+
+def modele_sor(kullanici_mesaji: str, gecmis: list = None, ozet: str = "", dil: str = "en", cwd_bilgisi: str = "", active_model: str = None) -> dict:
+    target_model = active_model if active_model else MODEL
+    prompt = dinamik_prompt_olustur(kullanici_istegi=kullanici_mesaji, dil=dil)
+    
     mesajlar = [{"role": "system", "content": prompt}]
     if cwd_bilgisi:
-        mesajlar.append({
-            "role": "system",
-            "content": f"Current working directory: {cwd_bilgisi}"
-        })
+        mesajlar.append({"role": "system", "content": f"Current directory: {cwd_bilgisi}"})
     if ozet:
-        mesajlar.append({
-            "role": "system",
-            "content": f"Previous conversation summary (for context):\n{ozet}"
-        })
+        mesajlar.append({"role": "system", "content": f"Context summary: {ozet}"})
+    
     if gecmis:
         mesajlar.extend(gecmis)
+    
     mesajlar.append({"role": "user", "content": kullanici_mesaji})
+    
     payload = {
-        "model": MODEL,
+        "model": target_model,
         "messages": mesajlar,
         "temperature": 0.1,
         "max_tokens": YANIT_BUTCE,
     }
+    
     try:
         yanit = requests.post(API_URL, json=payload, timeout=60)
         yanit.raise_for_status()
-        icerik = yanit.json()["choices"][0]["message"]["content"]
+        data = yanit.json()
+        icerik = data["choices"][0]["message"]["content"]
         return {"durum": "ok", "icerik": icerik}
     except requests.exceptions.ConnectionError:
+        log_mesaj("API Connection Error", "ERROR")
         return {"durum": "hata", "mesaj": "connection"}
     except requests.exceptions.Timeout:
+        log_mesaj("API Timeout", "ERROR")
         return {"durum": "hata", "mesaj": "timeout"}
     except Exception as e:
+        log_mesaj(f"API Unexpected Error: {e}", "ERROR")
         return {"durum": "hata", "mesaj": f"unexpected:{e}"}
 
 
-def gecmisi_ozetle(mesajlar: list, dil: str = "en") -> str:
+def gecmisi_ozetle(mesajlar: list, dil: str = "en", active_model: str = None) -> str:
+    target_model = active_model if active_model else MODEL
     satirlar = []
     for m in mesajlar:
         rol = "User" if m["role"] == "user" else "Assistant"
         satirlar.append(f"{rol}: {m['content']}")
     konusma_metni = "\n".join(satirlar)
 
-    if dil == "tr":
-        ozet_prompt = (
-            "Aşağıdaki terminal konuşmasını Türkçe olarak çok kısa özetle. "
-            "Sadece önemli bilgileri tut: hangi dosya/klasörler oluşturuldu, silindi, "
-            "nereye taşındı. Özet 3-4 cümle olsun.\n\n" + konusma_metni
-        )
-    else:
-        ozet_prompt = (
-            "Summarize the following terminal conversation very briefly in English. "
-            "Keep only important info: which files/folders were created, deleted, "
-            "moved. Summary should be 3-4 sentences.\n\n" + konusma_metni
-        )
+    prompt = (
+        f"Aşağıdaki konuşmayı {('Türkçe' if dil=='tr' else 'English')} olarak çok kısa (3-4 cümle) özetle. "
+        "Sadece teknik değişimleri (dosya/klasör işlemleri) belirt.\n\n" + konusma_metni
+    )
+    
     payload = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": ozet_prompt}],
+        "model": target_model,
+        "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.1,
         "max_tokens": 150,
     }
@@ -263,77 +265,50 @@ def gecmisi_ozetle(mesajlar: list, dil: str = "en") -> str:
         yanit = requests.post(API_URL, json=payload, timeout=30)
         yanit.raise_for_status()
         return yanit.json()["choices"][0]["message"]["content"].strip()
-    except Exception:
-        basit = []
-        for m in mesajlar:
-            if m["role"] == "user":
-                basit.append(m["content"][:60])
-        return "Previous requests: " + "; ".join(basit[-5:])
+    except Exception as e:
+        log_mesaj(f"Summary failed: {e}", "WARNING")
+        basit = [m["content"][:60] for m in mesajlar if m["role"] == "user"]
+        return "History: " + "; ".join(basit[-5:])
 
 
 def yaniti_ayristir(ham_metin: str) -> tuple[str, str]:
-    """Parse JSON responses from models. Robust against markdown tags and conversational noise."""
+    """AI yanıtını JSON olarak ayıklar, hata varsa fallback mekanizmasını kullanır."""
     metin = ham_metin.strip()
     
-    # 1. Try to find potential JSON inside the text (handles markdown or conversational prefix/suffix)
-    json_bloğu = metin
-    match = re.search(r"(\{.*\})", metin, re.DOTALL)
-    if match:
-        json_bloğu = match.group(1)
-    
-    # 2. Try parsing
+    # 1. JSON bloğunu bul (Markdown blokları içindeyse bile)
     try:
-        data = json.loads(json_bloğu)
-        cevap_tipi = data.get("type", "")
-        if cevap_tipi in ["error", "refusal"]:
-            return data.get("content", ""), ""
-            
-        aciklama = data.get("explain") or data.get("explanation") or ""
-        komut = data.get("content") or data.get("command") or ""
-        
-        # If the model returned keys we can use but not perfectly formatted
-        if not komut and not aciklama and len(data) > 0:
-            for k, v in data.items():
-                if isinstance(v, str) and any(x in v.lower() for x in ["mkdir", "ls", "get-", "set-", "rm ", "cd "]):
-                     komut = v
-                     break
-        
-        return aciklama.strip(), komut.strip()
-    except Exception:
-        pass
-        
-    # 3. LEGACY FALLBACK: Traditional key-value parsing for non-JSON models
+        # Önce tüm metni deniyoruz (saf JSON gelmiş olabilir)
+        data = json.loads(metin)
+        return data.get("explain", ""), data.get("content", "")
+    except json.JSONDecodeError:
+        # Markdown blokları arasındaysa ayıkla
+        match = re.search(r"\{.*\}", metin, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(0))
+                return data.get("explain", ""), data.get("content", "")
+            except:
+                pass
+
+    # 2. Fallback: Satır bazlı manuel ayıklama (Etiket bazlı modeller için)
     aciklama = ""
     komut = ""
+    metin_temiz = re.sub(r"```[a-zA-Z]*", "", ham_metin).replace("```", "")
     
-    metin = re.sub(r"```[a-zA-Z]*\n", " ", ham_metin)
-    metin = metin.replace("```", "")
-    
-    if not re.search(r"(AÇIKLAMA|DESCRIPTION|KOMUT|COMMAND)\s*:", metin, re.IGNORECASE):
-        # Best guess: if it's not JSON and not labeled, it might be just the command
-        return "", metin.strip()
-        
-    lines = metin.split("\n")
-    current_mode = None
-    
-    for line in lines:
-        upper = line.strip().upper()
-        if upper.startswith("AÇIKLAMA:") or upper.startswith("DESCRIPTION:"):
-            current_mode = "aciklama"
-            parcalar = line.split(":", 1)
-            if len(parcalar) > 1:
-                aciklama += parcalar[1].strip() + " "
-        elif upper.startswith("KOMUT:") or upper.startswith("COMMAND:"):
-            current_mode = "komut"
-            parcalar = line.split(":", 1)
-            if len(parcalar) > 1:
-                komut += parcalar[1].strip() + " "
-        else:
-            if current_mode == "aciklama" and line.strip() != "":
-                aciklama += line.strip() + " "
-            elif current_mode == "komut" and line.strip() != "":
-                komut += line.strip() + " "
-                
+    current_key = None
+    for line in metin_temiz.split("\n"):
+        line_upper = line.strip().upper()
+        if "AÇIKLAMA:" in line_upper or "DESCRIPTION:" in line_upper:
+            current_key = "a"
+            aciklama += line.split(":", 1)[-1].strip() + " "
+        elif "KOMUT:" in line_upper or "COMMAND:" in line_upper:
+            current_key = "k"
+            komut += line.split(":", 1)[-1].strip() + " "
+        elif current_key == "a":
+            aciklama += line.strip() + " "
+        elif current_key == "k":
+            komut += line.strip() + " "
+            
     return aciklama.strip(), komut.strip()
 
 
@@ -611,8 +586,9 @@ class AITerminalAsistani(ctk.CTk):
         self.workspaces_data = workspaces_yukle()
         self.aktif_ws_index = None
 
-        # Dinamik Model Tespiti için başlangıç değeri (Hata önlemek için erken tanımlandı)
+        # Dinamik Model Tespiti
         self.model_adi = "..."
+        self.model_id = MODEL  # Başlangıçta varsayılan model
 
         self.title(t(self.dil, "app_title"))
         self.geometry("900x650")
@@ -826,7 +802,8 @@ class AITerminalAsistani(ctk.CTk):
             slot = self.workspaces_data["slots"][self.aktif_ws_index]
             if slot and "yol" in slot:
                 cwd_bilgisi = slot["yol"]
-        sonuc = modele_sor(istek, gecmis, ozet, dil=self.dil, cwd_bilgisi=cwd_bilgisi)
+        
+        sonuc = modele_sor(istek, gecmis, ozet, dil=self.dil, cwd_bilgisi=cwd_bilgisi, active_model=self.model_id)
         self.after(0, self._yanit_geldi, sonuc, istek)
 
     def _yanit_geldi(self, sonuc: dict, kullanici_istegi: str = ""):
@@ -1131,7 +1108,7 @@ class AITerminalAsistani(ctk.CTk):
             workspaces_kaydet(self.workspaces_data)
 
     def _ozetleme_yap(self, ozetlenecek: list, korunan: list):
-        yeni_ozet = gecmisi_ozetle(ozetlenecek, dil=self.dil)
+        yeni_ozet = gecmisi_ozetle(ozetlenecek, dil=self.dil, active_model=self.model_id)
         self.after(0, self._ozetleme_tamamlandi, yeni_ozet, korunan)
 
     def _ozetleme_tamamlandi(self, yeni_ozet: str, korunan: list):
@@ -1243,21 +1220,24 @@ class AITerminalAsistani(ctk.CTk):
             text=f"{t(self.dil, 'memory')}: {yuzde}%", text_color=renk)
 
     def _dinamik_model_tespit_et(self):
-        """LM Studio'daki aktif modeli algılar."""
+        """LM Studio'daki aktif modeli algılar ve hem ismi hem de tam ID'yi kaydeder."""
         try:
             r = requests.get(LMS_CHECK_URL, timeout=2)
             if r.status_code == 200:
                 data = r.json()
                 if "data" in data and len(data["data"]) > 0:
                     model_id = data["data"][0]["id"]
-                    # İsmi biraz sadeleştirelim
+                    self.model_id = model_id  # API için tam ID
+                    # Kullanıcı dostu isim
                     self.model_adi = model_id.split("/")[-1].replace(".gguf", "").replace("-", " ").title()
                     if hasattr(self, "model_bilgi_lbl"):
                         self.model_bilgi_lbl.configure(text=f"[{self.model_adi}] {MODEL_CONTEXT}")
                     return
-        except:
-            pass
+        except Exception as e:
+            log_mesaj(f"Model detection error: {e}", "WARNING")
+            
         self.model_adi = "Local AI"
+        self.model_id = MODEL
         if hasattr(self, "model_bilgi_lbl"):
             self.model_bilgi_lbl.configure(text=f"[{self.model_adi}] {MODEL_CONTEXT}")
 

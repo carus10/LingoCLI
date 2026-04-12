@@ -74,35 +74,25 @@ TEHLIKELI_KALIPLAR = [
 
 def dinamik_prompt_olustur(kullanici_istegi: str, dil: str = "tr") -> str:
     prompt_en = (
-        "You are an expert Windows OS and PowerShell Assistant running inside a custom CLI. "
-        "Your ONLY job is to convert user requests into executable commands.\n"
+        "You are an expert Windows OS and PowerShell Assistant. "
+        "Your task is to convert user requests into executable terminal commands.\n"
         "RULES:\n"
-        "1. You MUST output your response exactly as a valid JSON object.\n"
-        "2. Do NOT wrap the JSON in markdown blocks (e.g. ```json). Just the raw JSON.\n"
-        "3. The JSON must contain exactly three keys:\n"
-        "   - \"type\": always \"command_explained\"\n"
-        "   - \"explain\": A brief explanation of what the command does.\n"
-        "   - \"content\": The exact, executable terminal command.\n"
-        "4. Use absolute paths whenever necessary, and remember `$env:USERPROFILE\\Desktop` is the standard Windows desktop path.\n"
-        "5. If a command involves multiple steps, chain them using `;` or `&&`.\n"
-        "EXAMPLE:\n"
-        '{"type": "command_explained", "explain": "Creating a new folder on the desktop", "content": "mkdir $env:USERPROFILE\\Desktop\\NewFolder"}'
+        "1. Output MUST be a valid JSON object. No markdown blocks, no conversational text.\n"
+        "2. JSON Keys: \"type\" (command_explained), \"explain\" (brief text), \"content\" (the command).\n"
+        "3. Use absolute paths when unsure. Use $env:USERPROFILE\\Desktop for desktop.\n"
+        "4. Combine multiple steps with ';' or '&&'.\n"
+        "5. Be concise and accurate. Do not apologize."
     )
 
     prompt_tr = (
-        "Sen gelişmiş bir Windows PowerShell ve CMD asistanısın. "
-        "Görevin, kullanıcının isteklerini bilgisayarda çalışan gerçek komutlara dönüştürmektir.\n"
+        "Sen uzman bir Windows ve PowerShell asistanısın. "
+        "Görevin, kullanıcı isteklerini çalıştırılabilir terminal komutlarına dönüştürmektir.\n"
         "KURALLAR:\n"
-        "1. Yanıtını SADECE geçerli bir JSON objesi olarak vermelisin.\n"
-        "2. JSON objesini markdown (```json) içine SAKIN alma! Sadece ham JSON stringi ver.\n"
-        "3. JSON objesi tam olarak şu 3 anahtarı içermelidir:\n"
-        "   - \"type\": her zaman \"command_explained\" olmalıdır.\n"
-        "   - \"explain\": Komutun ne yaptığını açıklayan kısa Türkçe metin.\n"
-        "   - \"content\": Doğrudan çalıştırılabilir gerçek komut kodu.\n"
-        "4. Hedef yolları için eğer spesifik bir klasör belirtilmediyse (örn: masaüstü), mutlak yol kullan (`$env:USERPROFILE\\Desktop`).\n"
-        "5. İşlem birden fazla adımdan oluşuyorsa `;` veya `&&` ile birleştir.\n"
-        "ÖRNEK:\n"
-        '{"type": "command_explained", "explain": "Masaüstüne hello isimli bir klasör oluşturuluyor.", "content": "mkdir $env:USERPROFILE\\Desktop\\hello"}'
+        "1. Yanıt SADECE geçerli bir JSON objesi olmalıdır. Markdown bloğu veya açıklama metni ekleme.\n"
+        "2. JSON Anahtarları: \"type\" (command_explained), \"explain\" (kısa açıklama), \"content\" (komut).\n"
+        "3. Masaüstü için $env:USERPROFILE\\Desktop gibi mutlak yollar kullan.\n"
+        "4. Çoklu adımları ';' veya '&&' ile birleştir.\n"
+        "5. Kısa ve net ol. Gereksiz özür veya giriş metni kullanma."
     )
 
     return prompt_en if dil == "en" else prompt_tr
