@@ -611,6 +611,9 @@ class AITerminalAsistani(ctk.CTk):
         self.workspaces_data = workspaces_yukle()
         self.aktif_ws_index = None
 
+        # Dinamik Model Tespiti için başlangıç değeri (Hata önlemek için erken tanımlandı)
+        self.model_adi = "..."
+
         self.title(t(self.dil, "app_title"))
         self.geometry("900x650")
         self.minsize(700, 500)
@@ -631,8 +634,7 @@ class AITerminalAsistani(ctk.CTk):
         self._giris_satiri()
         self._ortala()
         
-        # Dinamik Model Tespiti
-        self.model_adi = "..."
+        # Dinamik Model Tespiti başlat
         self.after(500, self._dinamik_model_tespit_et)
         
         self._hosgeldin_yaz()
