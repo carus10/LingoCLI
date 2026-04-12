@@ -1020,7 +1020,6 @@ class AITerminalAsistani(ctk.CTk):
     def _hosgeldin_yaz(self):
         d = self.dil
         self._terminale_yaz_satir(t(d, "welcome_title"), self.ayarlar["komut_renk"])
-        self._terminale_yaz_satir(t(d, "welcome_model", ctx=MODEL_CONTEXT).replace("Qwen 2.5 3B", self.model_adi), ACIK_GRI)
         self._terminale_yaz_satir(t(d, "welcome_memory"), ACIK_GRI)
         self._terminale_yaz_satir("─" * 70, GRI)
         self._terminale_yaz_satir(t(d, "welcome_hint"), ACIK_GRI)
