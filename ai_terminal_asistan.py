@@ -716,6 +716,13 @@ class AITerminalAsistani(ctk.CTk):
             text_color=self.ayarlar["komut_renk"])
         self.durum_lbl.pack(side="right", padx=8)
 
+        # Model & Context info label
+        self.model_bilgi_lbl = ctk.CTkLabel(bar, 
+            text=f"[{self.model_adi}] {MODEL_CONTEXT}",
+            font=ctk.CTkFont(family=FONT, size=11, weight="bold"),
+            text_color="#c678dd")
+        self.model_bilgi_lbl.pack(side="right", padx=(0, 12))
+
     def _terminal_alani(self):
         self.terminal = ctk.CTkTextbox(self,
             font=ctk.CTkFont(family=FONT, size=13),
@@ -1155,7 +1162,7 @@ class AITerminalAsistani(ctk.CTk):
             f"{t(d, 'info_memory')}\n"
             f"{t(d, 'info_bar', bar=cubuk, pct=doluluk)}\n"
             f"{t(d, 'info_raw', n=ham_mesaj, t=ham_token)}\n"
-            f"{t(d, 'info_summary', s=oz_str, t=ozet_token)}\n"
+            f"{t(d, 'info_summary', s=ozet_str, t=ozet_token)}\n"
             f"{t(d, 'info_total', t=toplam_token, b=GECMIS_BUTCE)}\n"
             f"{t(d, 'info_remaining', r=max(0, kalan_token))}\n"
             f"{t(d, 'info_summaries', n=self.ozetleme_sayisi)}\n"
@@ -1244,10 +1251,14 @@ class AITerminalAsistani(ctk.CTk):
                     model_id = data["data"][0]["id"]
                     # İsmi biraz sadeleştirelim
                     self.model_adi = model_id.split("/")[-1].replace(".gguf", "").replace("-", " ").title()
+                    if hasattr(self, "model_bilgi_lbl"):
+                        self.model_bilgi_lbl.configure(text=f"[{self.model_adi}] {MODEL_CONTEXT}")
                     return
         except:
             pass
         self.model_adi = "Local AI"
+        if hasattr(self, "model_bilgi_lbl"):
+            self.model_bilgi_lbl.configure(text=f"[{self.model_adi}] {MODEL_CONTEXT}")
 
     def _yukleniyor(self, aktif: bool):
         if aktif:
