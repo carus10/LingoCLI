@@ -792,14 +792,22 @@ class AITerminalAsistani(ctk.CTk):
             command=self._sablonlar_penceresi_ac)
         self.templates_btn.pack(side="left", padx=4)
 
-        # Script Export button
         self.script_btn = ctk.CTkButton(bar, text=t(self.dil, "script_save"),
-            width=130, height=24,
+            width=100, height=24,
             font=ctk.CTkFont(family=FONT, size=10),
             fg_color="#2a2a1a", hover_color="#3a3a2a",
             text_color=SARI, corner_radius=4,
             command=self._script_olarak_kaydet)
-        self.script_btn.pack(side="left", padx=4)
+        self.script_btn.pack(side="left", padx=2)
+
+        # Script Run button
+        self.script_run_btn = ctk.CTkButton(bar, text="▶ Run Script",
+            width=100, height=24,
+            font=ctk.CTkFont(family=FONT, size=10),
+            fg_color="#1a2a3a", hover_color="#2a3a4a",
+            text_color="#61afef", corner_radius=4,
+            command=self._script_dosyasi_yukle)
+        self.script_run_btn.pack(side="left", padx=2)
 
         # Memory progress bar
         hafiza_frame = ctk.CTkFrame(bar, fg_color="transparent", width=180)
@@ -916,11 +924,20 @@ class AITerminalAsistani(ctk.CTk):
         SablonPenceresi(self, self.sablonlar, self._sablon_kullan, self._sablon_kaydet, self.dil)
 
     def _sablon_kullan(self, sablon):
-        """Şablonu giriş alanına yerleştir."""
+        """Şablonu kullan. Eğer {parametre} içeriyorsa pencere aç."""
+        komut = sablon["komut"]
+        parametreler = re.findall(r"\{(.*?)\}", komut)
+        
+        if parametreler:
+            TemplateParameterPenceresi(self, sablon, self._sablon_uygula, self.dil)
+        else:
+            self._sablon_uygula(komut, sablon.get("ad", "Template"))
+
+    def _sablon_uygula(self, final_komut, ad):
         self.giris.delete(0, "end")
-        self.giris.insert(0, sablon["komut"])
+        self.giris.insert(0, final_komut)
         self.giris.focus_set()
-        self._terminale_yaz_satir(f"  Template loaded: {sablon['ad']}", "gri")
+        self._terminale_yaz_satir(f"  Template loaded: {ad}", "gri")
 
     def _sablon_kaydet(self, sablon):
         """Yeni şablon kaydet."""
@@ -1022,6 +1039,83 @@ class AITerminalAsistani(ctk.CTk):
             self._terminale_yaz_satir(t(self.dil, "script_saved", f=dosya_yolu), "komut")
         except Exception as e:
             self._terminale_yaz_satir(f"  Failed to save script: {e}", "kirmizi")
+
+    def _script_dosyasi_yukle(self):
+        """Bir .ps1 dosyası yükler ve script modunu başlatır."""
+        dosya_yolu = filedialog.askopenfilename(
+            title="Select PowerShell Script",
+            filetypes=[("PowerShell Script", "*.ps1"), ("All Files", "*.*")]
+        )
+        if not dosya_yolu: return
+        
+        try:
+            with open(dosya_yolu, "r", encoding="utf-8") as f:
+                satirlar = f.readlines()
+            
+            # Filtrele: Boş olmayan ve yorum satırı olmayanlar
+            komutlar = [s.strip() for s in satirlar if s.strip() and not s.strip().startswith("#")]
+            if komutlar:
+                self._script_modu_baslat(komutlar)
+            else:
+                self._terminale_yaz_satir("  No executable commands found in file", "sari")
+        except Exception as e:
+            self._terminale_yaz_satir(f"  Failed to load script: {e}", "kirmizi")
+
+    # ──────────────────────────────────────────
+    #  SCRIPT MODE RUNNER
+    # ──────────────────────────────────────────
+
+    def _script_modu_baslat(self, komutlar):
+        """Birden fazla komutu sırayla ve onaylı çalıştırır."""
+        if not komutlar: return
+        self._terminale_yaz_satir("\n" + "═"*20 + " SCRIPT MODE " + "═"*20, "sari")
+        self._script_index = 0
+        self._script_komutlar = komutlar
+        self._script_siradaki_adim()
+
+    def _script_siradaki_adim(self):
+        if self._script_index >= len(self._script_komutlar):
+            self._terminale_yaz_satir("═"*20 + " SCRIPT FINISHED " + "═"*20 + "\n", "sari")
+            return
+
+        komut = self._script_komutlar[self._script_index]
+        self._terminale_yaz(f"\n[{self._script_index+1}/{len(self._script_komutlar)}] ", "gri")
+        self._terminale_yaz(f"Next: {komut}", "komut")
+        
+        # Onay butonu terminalin içine
+        self.terminal.configure(state="normal")
+        cmd_frame = ctk.CTkFrame(self.terminal._textbox, fg_color="transparent", height=34)
+        
+        def run_it():
+            cmd_frame.destroy()
+            self._history_ekle(komut)
+            self._yukleniyor(True)
+            threading.Thread(target=self._komut_calistir_arkaplan, args=(komut,), daemon=True).start()
+            self._script_callback = self._script_bitti
+            
+        def skip_it():
+            cmd_frame.destroy()
+            self._script_index += 1
+            self._script_siradaki_adim()
+
+        def stop_it():
+            cmd_frame.destroy()
+            self._terminale_yaz_satir("\n  Script aborted.", "kirmizi")
+
+        ctk.CTkButton(cmd_frame, text="RUN (y)", width=70, height=24, fg_color="#1a3a1a", command=run_it).pack(side="left", padx=4)
+        ctk.CTkButton(cmd_frame, text="SKIP (s)", width=70, height=24, fg_color="#2a2a2a", command=skip_it).pack(side="left", padx=4)
+        ctk.CTkButton(cmd_frame, text="STOP", width=70, height=24, fg_color="#3a1a1a", command=stop_it).pack(side="left", padx=4)
+        
+        self.terminal._textbox.window_create("end", window=cmd_frame)
+        self.terminal._textbox.insert("end", "\n")
+        self.terminal.configure(state="disabled")
+        self.terminal._textbox.see("end")
+
+    def _script_bitti(self, success):
+        self._script_index += 1
+        if not success:
+            self._terminale_yaz_satir("  Warning: Last command failed.", "sari")
+        self.after(500, self._script_siradaki_adim)
         tb.tag_configure("kirmizi",   foreground=KIRMIZI)
         tb.tag_configure("gri",       foreground=ACIK_GRI)
         tb.tag_configure("beyaz",     foreground=BEYAZ)
@@ -1049,6 +1143,7 @@ class AITerminalAsistani(ctk.CTk):
         self.giris.bind("<Up>", self._history_onceki)
         self.giris.bind("<Down>", self._history_sonraki)
         self.giris.bind("<Control-k>", lambda e: self._history_arama_ac())
+        self.giris.bind("<Control-t>", lambda e: self._sablonlar_penceresi_ac())
         self.giris.focus_set()
 
     # ──────────────────────────────────────────
@@ -1268,8 +1363,14 @@ class AITerminalAsistani(ctk.CTk):
             self._terminale_yaz_satir(t(self.dil, "success"), "komut")
         else:
             self._terminale_yaz_satir(t(self.dil, "cmd_error"), "kirmizi")
-            # Add error analysis button
+            # Auto-detect error and show analysis
             self._hata_analiz_butonu_goster(cikti)
+            
+        if hasattr(self, "_script_callback") and self._script_callback:
+            tmp = self._script_callback
+            self._script_callback = None
+            tmp(basarili)
+            
         self._terminale_yaz_satir("", "beyaz")
 
     def _iptal(self):
@@ -1841,19 +1942,33 @@ class HistoryPenceresi(ctk.CTkToplevel):
         self.arama_giris.bind("<KeyRelease>", self._arama_yap)
         
         # History list
-        self.liste_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.liste_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.liste_frame.pack(fill="both", expand=True, padx=20, pady=10)
         
+        self.favori_sadece = False
         self._liste_guncelle(gecmis)
         
-        # Close button
-        ctk.CTkButton(self, text="Kapat" if dil=="tr" else "Close",
+        # Bottom bar
+        bot = ctk.CTkFrame(self, fg_color="transparent")
+        bot.pack(fill="x", padx=20, pady=(0, 20))
+
+        self.fav_filter_btn = ctk.CTkButton(bot, text="Show Favorites Only", 
+            width=140, height=32, font=ctk.CTkFont(size=11),
+            fg_color="#1a1a1a", border_width=1, command=self._toggle_filter)
+        self.fav_filter_btn.pack(side="left")
+
+        ctk.CTkButton(bot, text="Kapat" if dil=="tr" else "Close",
             width=100, height=32,
             font=ctk.CTkFont(family=FONT, size=12),
             fg_color="#2a2a2a", hover_color="#3a3a3a",
             text_color="#cccccc", corner_radius=4,
-            command=self.destroy).pack(pady=(0, 20))
+            command=self.destroy).pack(side="right")
     
+    def _toggle_filter(self):
+        self.favori_sadece = not self.favori_sadece
+        self.fav_filter_btn.configure(fg_color="#3a3a1a" if self.favori_sadece else "#1a1a1a")
+        self._liste_guncelle(self.gecmis)
+
     def _liste_guncelle(self, gecmis):
         # Clear existing
         for widget in self.liste_frame.winfo_children():
@@ -1879,20 +1994,38 @@ class HistoryPenceresi(ctk.CTkToplevel):
                 font=ctk.CTkFont(family=FONT, size=10), text_color=ACIK_GRI,
                 anchor="w").pack(anchor="w")
             
+            
+            fav_status = item.get("favori", False)
+            fav_color = "#f9f1a5" if fav_status else "#444444"
+            
+            ctk.CTkButton(satir, text="★", width=24, height=24, 
+                fg_color="transparent", text_color=fav_color,
+                command=lambda i=item: self._fav_degistir(i)).pack(side="right", padx=5)
+
             ctk.CTkButton(satir, text=t(self.dil, "history_use"),
                 width=60, height=24,
                 font=ctk.CTkFont(family=FONT, size=11),
                 fg_color="#1a3a1a", hover_color="#2a5a2a",
                 text_color="#16c60c", corner_radius=4,
-                command=lambda k=item['komut']: self._sec(k)).pack(side="right", padx=10)
+                command=lambda k=item['komut']: self._sec(k)).pack(side="right", padx=5)
     
+    def _fav_degistir(self, item):
+        item["favori"] = not item.get("favori", False)
+        # Update persistence
+        gecmis_kaydet({"komutlar": self.gecmis, "index": 0})
+        self._liste_guncelle(self.gecmis)
+
     def _arama_yap(self, event=None):
         arama_metni = self.arama_giris.get().lower()
+        datalist = self.gecmis
+        if self.favori_sadece:
+            datalist = [i for i in datalist if i.get("favori")]
+            
         if not arama_metni:
-            self._liste_guncelle(self.gecmis)
+            self._liste_guncelle(datalist)
             return
         
-        filtrelenmis = [item for item in self.gecmis if arama_metni in item["komut"].lower()]
+        filtrelenmis = [item for item in datalist if arama_metni in item["komut"].lower()]
         self._liste_guncelle(filtrelenmis)
     
     def _sec(self, komut):
@@ -2048,6 +2181,53 @@ class SablonPenceresi(ctk.CTkToplevel):
             fg_color="#1a3a1a", hover_color="#2a5a2a",
             text_color="#16c60c", corner_radius=4,
             command=kaydet).pack(pady=(0, 20))
+
+
+# ══════════════════════════════════════════════
+#  TEMPLATE PARAMETER WINDOW
+# ══════════════════════════════════════════════
+
+class TemplateParameterPenceresi(ctk.CTkToplevel):
+    def __init__(self, parent, sablon, callback, dil="en"):
+        super().__init__(parent)
+        self.title("Template Parameters")
+        self.geometry("450x400")
+        self.resizable(False, False)
+        self.configure(fg_color="#111111")
+        self.transient(parent)
+        self.grab_set()
+        
+        self.sablon = sablon
+        self.callback = callback
+        self.inputs = {}
+        
+        ctk.CTkLabel(self, text=f"Template: {sablon['ad']}", 
+            font=ctk.CTkFont(family=FONT, size=15, weight="bold"), text_color="#16c60c").pack(pady=20)
+        
+        komut = sablon["komut"]
+        param_names = re.findall(r"\{(.*?)\}", komut)
+        
+        container = ctk.CTkScrollableFrame(self, fg_color="transparent", height=200)
+        container.pack(fill="both", expand=True, padx=20)
+        
+        for name in param_names:
+            frame = ctk.CTkFrame(container, fg_color="transparent")
+            frame.pack(fill="x", pady=5)
+            ctk.CTkLabel(frame, text=name.capitalize() + ":", font=ctk.CTkFont(family=FONT, size=12)).pack(anchor="w")
+            ent = ctk.CTkEntry(frame, fg_color="#1a1a1a", border_width=1)
+            ent.pack(fill="x", pady=2)
+            self.inputs[name] = ent
+            
+        def apply():
+            res = komut
+            for name, ent in self.inputs.items():
+                val = ent.get().strip() or f"[{name}]"
+                res = res.replace("{" + name + "}", val)
+            self.destroy()
+            self.callback(res, sablon["ad"])
+            
+        ctk.CTkButton(self, text="PREPARE COMMAND", fg_color="#1a3a1a", hover_color="#2a5a2a",
+            command=apply).pack(pady=20)
 
 
 if __name__ == "__main__":
