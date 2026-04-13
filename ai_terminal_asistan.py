@@ -1057,8 +1057,25 @@ class AITerminalAsistani(ctk.CTk):
         """Bir .ps1 dosyası yükler ve script modunu başlatır."""
         dosya_yolu = filedialog.askopenfilename(
             title="Select PowerShell Script",
+            initialdir=SCRIPTS_DIR,
             filetypes=[("PowerShell Script", "*.ps1"), ("All Files", "*.*")]
-    # ──────────────────────────────────────────
+        )
+        if not dosya_yolu: return
+        
+        try:
+            komutlar = []
+            with open(dosya_yolu, "r", encoding="utf-8") as f:
+                for satir in f:
+                    satir = satir.strip()
+                    if satir and not satir.startswith("#"):
+                        komutlar.append(satir)
+            
+            if komutlar:
+                self._script_modu_baslat(komutlar)
+            else:
+                self._terminale_yaz_satir("  Selected script contains no commands.", "sari")
+        except Exception as e:
+            self._terminale_yaz_satir(f"  Error loading script: {e}", "kirmizi")
     #  SCRIPT MODE RUNNER
     # ──────────────────────────────────────────
 
