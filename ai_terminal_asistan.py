@@ -316,8 +316,9 @@ def gecmisi_ozetle(mesajlar: list, dil: str = "en", active_model: str = None) ->
         satirlar.append(f"{rol}: {m['content']}")
     konusma_metni = "\n".join(satirlar)
 
-    prompt = t(dil, "sys_summarize")
-        "Sadece teknik değişimleri (dosya/klasör işlemleri) belirt.\n\n" + konusma_metni
+    prompt = (
+        t(dil, "sys_summarize") + 
+        " Sadece teknik değişimleri (dosya/klasör işlemleri) belirt.\n\n" + konusma_metni
     )
     
     payload = {
