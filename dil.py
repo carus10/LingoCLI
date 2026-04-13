@@ -190,6 +190,29 @@ CEVIRILER = {
         "script_skip":      "Skip this command?",
         "script_name":      "Script Name",
         "script_hint":      "All commands from this session will be saved",
+
+        # ── Script Mode UI ──
+        "script_mode_title":     "SCRIPT MODE",
+        "script_mode_finished":  "SCRIPT FINISHED",
+        "script_mode_next":      "Next: {c}",
+        "script_mode_aborted":   "Script aborted.",
+        "script_mode_run":       "RUN (y)",
+        "script_mode_skip":      "SKIP (s)",
+        "script_mode_stop":      "STOP",
+        "script_mode_step_failed": "Step failed.",
+        "script_mode_ai_fix":    "Ask AI to Fix & Retry",
+        "script_mode_continue":  "Continue anyway",
+        "script_mode_ai_updating": "AI Suggestion found. Updating step...",
+        "script_mode_ai_no_fix": "AI couldn't find a fix.",
+
+        # ── Misc / UI ──
+        "history_show_favorites": "Show Favorites Only",
+        "template_param_title":   "Template Parameters",
+        "template_param_prepare": "PREPARE COMMAND",
+        "template_param_label":   "Template: {n}",
+        "flow_multi_step":        "Multi-step flow detected: {n}",
+        "common_close":           "Close",
+        "common_delete":          "Delete",
     },
 
     # ══════════════════════════════════════════
@@ -374,6 +397,29 @@ CEVIRILER = {
         "script_skip":      "Bu komut atılsın mı?",
         "script_name":      "Script Adı",
         "script_hint":      "Bu oturumdaki tüm komutlar kaydedilecek",
+
+        # ── Script Mode UI ──
+        "script_mode_title":     "SCRIPT MODU",
+        "script_mode_finished":  "SCRIPT TAMAMLANDI",
+        "script_mode_next":      "Sıradaki: {c}",
+        "script_mode_aborted":   "Script durduruldu.",
+        "script_mode_run":       "ÇALIŞTIR (y)",
+        "script_mode_skip":      "ATLA (s)",
+        "script_mode_stop":      "DURDUR",
+        "script_mode_step_failed": "Adım başarısız oldu.",
+        "script_mode_ai_fix":    "AI ile Düzelt ve Tekrar Dene",
+        "script_mode_continue":  "Yine de devam et",
+        "script_mode_ai_updating": "AI Önerisi bulundu. Adım güncelleniyor...",
+        "script_mode_ai_no_fix": "AI çözüm bulamadı.",
+
+        # ── Misc / UI ──
+        "history_show_favorites": "Sadece Favorileri Göster",
+        "template_param_title":   "Şablon Parametreleri",
+        "template_param_prepare": "KOMUTU HAZIRLA",
+        "template_param_label":   "Şablon: {n}",
+        "flow_multi_step":        "Çok adımlı akış algılandı: {n}",
+        "common_close":           "Kapat",
+        "common_delete":          "Sil",
     },
 }
 

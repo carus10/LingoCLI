@@ -943,7 +943,7 @@ class AITerminalAsistani(ctk.CTk):
         # Check for multi-step script
         if ";" in final_komut:
             komutlar = [c.strip() for c in final_komut.split(";") if c.strip()]
-            self._terminale_yaz_satir(f"  Multi-step flow detected: {ad}", "gri")
+            self._terminale_yaz_satir(t(self.dil, "flow_multi_step", n=ad), "gri")
             self._script_modu_baslat(komutlar)
         else:
             self.giris.delete(0, "end")
@@ -1058,22 +1058,6 @@ class AITerminalAsistani(ctk.CTk):
         dosya_yolu = filedialog.askopenfilename(
             title="Select PowerShell Script",
             filetypes=[("PowerShell Script", "*.ps1"), ("All Files", "*.*")]
-        )
-        if not dosya_yolu: return
-        
-        try:
-            with open(dosya_yolu, "r", encoding="utf-8") as f:
-                satirlar = f.readlines()
-            
-            # Filtrele: Boş olmayan ve yorum satırı olmayanlar
-            komutlar = [s.strip() for s in satirlar if s.strip() and not s.strip().startswith("#")]
-            if komutlar:
-                self._script_modu_baslat(komutlar)
-            else:
-                self._terminale_yaz_satir("  No executable commands found in file", "sari")
-        except Exception as e:
-            self._terminale_yaz_satir(f"  Failed to load script: {e}", "kirmizi")
-
     # ──────────────────────────────────────────
     #  SCRIPT MODE RUNNER
     # ──────────────────────────────────────────
@@ -1081,19 +1065,19 @@ class AITerminalAsistani(ctk.CTk):
     def _script_modu_baslat(self, komutlar):
         """Birden fazla komutu sırayla ve onaylı çalıştırır."""
         if not komutlar: return
-        self._terminale_yaz_satir("\n" + "═"*20 + " SCRIPT MODE " + "═"*20, "sari")
+        self._terminale_yaz_satir("\n" + "═"*20 + f" {t(self.dil, 'script_mode_title')} " + "═"*20, "sari")
         self._script_index = 0
         self._script_komutlar = komutlar
         self._script_siradaki_adim()
 
     def _script_siradaki_adim(self):
         if self._script_index >= len(self._script_komutlar):
-            self._terminale_yaz_satir("═"*20 + " SCRIPT FINISHED " + "═"*20 + "\n", "sari")
+            self._terminale_yaz_satir("═"*20 + f" {t(self.dil, 'script_mode_finished')} " + "═"*20 + "\n", "sari")
             return
 
         komut = self._script_komutlar[self._script_index]
         self._terminale_yaz(f"\n[{self._script_index+1}/{len(self._script_komutlar)}] ", "gri")
-        self._terminale_yaz(f"Next: {komut}", "komut")
+        self._terminale_yaz(t(self.dil, "script_mode_next", c=komut), "komut")
         
         # Onay butonu terminalin içine
         self.terminal.configure(state="normal")
@@ -1113,11 +1097,11 @@ class AITerminalAsistani(ctk.CTk):
 
         def stop_it():
             cmd_frame.destroy()
-            self._terminale_yaz_satir("\n  Script aborted.", "kirmizi")
+            self._terminale_yaz_satir("\n  " + t(self.dil, "script_mode_aborted"), "kirmizi")
 
-        ctk.CTkButton(cmd_frame, text="RUN (y)", width=70, height=24, fg_color="#1a3a1a", command=run_it).pack(side="left", padx=4)
-        ctk.CTkButton(cmd_frame, text="SKIP (s)", width=70, height=24, fg_color="#2a2a2a", command=skip_it).pack(side="left", padx=4)
-        ctk.CTkButton(cmd_frame, text="STOP", width=70, height=24, fg_color="#3a1a1a", command=stop_it).pack(side="left", padx=4)
+        ctk.CTkButton(cmd_frame, text=t(self.dil, "script_mode_run"), width=70, height=24, fg_color="#1a3a1a", command=run_it).pack(side="left", padx=4)
+        ctk.CTkButton(cmd_frame, text=t(self.dil, "script_mode_skip"), width=70, height=24, fg_color="#2a2a2a", command=skip_it).pack(side="left", padx=4)
+        ctk.CTkButton(cmd_frame, text=t(self.dil, "script_mode_stop"), width=70, height=24, fg_color="#3a1a1a", command=stop_it).pack(side="left", padx=4)
         
         self.terminal._textbox.window_create("end", window=cmd_frame)
         self.terminal._textbox.insert("end", "\n")
@@ -1126,7 +1110,7 @@ class AITerminalAsistani(ctk.CTk):
 
     def _script_bitti(self, success):
         if not success:
-            self._terminale_yaz_satir("  [!] Step failed.", "kirmizi")
+            self._terminale_yaz_satir("  " + t(self.dil, "script_mode_step_failed"), "kirmizi")
             # Extra option for AI fix within script mode
             self.terminal.configure(state="normal")
             fix_frame = ctk.CTkFrame(self.terminal._textbox, fg_color="transparent", height=34)
@@ -1505,6 +1489,7 @@ class AITerminalAsistani(ctk.CTk):
     def _hosgeldin_yaz(self):
         d = self.dil
         self._terminale_yaz_satir(t(d, "welcome_title"), self.ayarlar["komut_renk"])
+        self._terminale_yaz_satir(t(d, "welcome_model", ctx=CONTEXT_LIMIT, model=getattr(self, 'model_id', 'Qwen 2.5')), ACIK_GRI)
         self._terminale_yaz_satir(t(d, "welcome_memory"), ACIK_GRI)
         self._terminale_yaz_satir("─" * 70, GRI)
         self._terminale_yaz_satir(t(d, "welcome_hint"), ACIK_GRI)
@@ -2033,12 +2018,12 @@ class HistoryPenceresi(ctk.CTkToplevel):
         bot = ctk.CTkFrame(self, fg_color="transparent")
         bot.pack(fill="x", padx=20, pady=(0, 20))
 
-        self.fav_filter_btn = ctk.CTkButton(bot, text="Show Favorites Only", 
+        self.fav_filter_btn = ctk.CTkButton(bot, text=t(self.dil, "history_show_favorites"), 
             width=140, height=32, font=ctk.CTkFont(size=11),
             fg_color="#1a1a1a", border_width=1, command=self._toggle_filter)
         self.fav_filter_btn.pack(side="left")
 
-        ctk.CTkButton(bot, text="Kapat" if dil=="tr" else "Close",
+        ctk.CTkButton(bot, text=t(self.dil, "common_close"),
             width=100, height=32,
             font=ctk.CTkFont(family=FONT, size=12),
             fg_color="#2a2a2a", hover_color="#3a3a3a",
@@ -2161,7 +2146,7 @@ class SablonPenceresi(ctk.CTkToplevel):
             text_color="#16c60c", corner_radius=4,
             command=self._yeni_sablon_ekle).pack(side="left", padx=6)
         
-        ctk.CTkButton(alt_frame, text="Kapat" if dil=="tr" else "Close",
+        ctk.CTkButton(alt_frame, text=t(self.dil, "common_close"),
             width=100, height=32,
             font=ctk.CTkFont(family=FONT, size=12),
             fg_color="#2a2a2a", hover_color="#3a3a3a",
@@ -2271,7 +2256,8 @@ class SablonPenceresi(ctk.CTkToplevel):
 class TemplateParameterPenceresi(ctk.CTkToplevel):
     def __init__(self, parent, sablon, callback, dil="en"):
         super().__init__(parent)
-        self.title("Template Parameters")
+        self.dil = dil
+        self.title(t(dil, "template_param_title"))
         self.geometry("450x400")
         self.resizable(False, False)
         self.configure(fg_color="#111111")
@@ -2282,7 +2268,7 @@ class TemplateParameterPenceresi(ctk.CTkToplevel):
         self.callback = callback
         self.inputs = {}
         
-        ctk.CTkLabel(self, text=f"Template: {sablon['ad']}", 
+        ctk.CTkLabel(self, text=t(dil, "template_param_label", n=sablon['ad']), 
             font=ctk.CTkFont(family=FONT, size=15, weight="bold"), text_color="#16c60c").pack(pady=20)
         
         komut = sablon["komut"]
@@ -2307,7 +2293,7 @@ class TemplateParameterPenceresi(ctk.CTkToplevel):
             self.destroy()
             self.callback(res, sablon["ad"])
             
-        ctk.CTkButton(self, text="PREPARE COMMAND", fg_color="#1a3a1a", hover_color="#2a5a2a",
+        ctk.CTkButton(self, text=t(dil, "template_param_prepare"), fg_color="#1a3a1a", hover_color="#2a5a2a",
             command=apply).pack(pady=20)
 
 
