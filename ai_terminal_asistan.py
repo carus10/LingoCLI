@@ -64,6 +64,10 @@ WORKSPACES_DOSYASI = os.path.join(_DATA_DIR, "workspaces.json")
 HISTORY_DOSYASI = os.path.join(_DATA_DIR, "komut_gecmisi.json")
 TEMPLATES_DOSYASI = os.path.join(_DATA_DIR, "sablonlar.json")
 ERROR_HISTORY_DOSYASI = os.path.join(_DATA_DIR, "hata_gecmisi.json")
+SCRIPTS_DIR = os.path.join(_DATA_DIR, "Scripts")
+
+# Ensure directories exist
+os.makedirs(SCRIPTS_DIR, exist_ok=True)
 
 # App icon path (bundled)
 ICON_PATH = os.path.join(_APP_DIR, "assest", "icon.ico")
@@ -1019,8 +1023,9 @@ class AITerminalAsistani(ctk.CTk):
         dosya_yolu = filedialog.asksaveasfilename(
             title=t(self.dil, "script_save"),
             defaultextension=".ps1",
+            initialdir=SCRIPTS_DIR,
             filetypes=[("PowerShell Script", "*.ps1"), ("All Files", "*.*")],
-            initialfile=f"lingocli_script_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.ps1"
+            initialfile=f"lingocli_session_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.ps1"
         )
         
         if not dosya_yolu:
@@ -1032,7 +1037,8 @@ class AITerminalAsistani(ctk.CTk):
                 f.write(f"# Date: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write("# " + "="*60 + "\n\n")
                 
-                for i, komut in enumerate(reversed(self.oturum_komutlari), 1):
+                # Fixed: Chronological order (first to last)
+                for i, komut in enumerate(self.oturum_komutlari, 1):
                     f.write(f"# Step {i}\n")
                     f.write(f"{komut}\n\n")
             
@@ -1116,6 +1122,30 @@ class AITerminalAsistani(ctk.CTk):
         if not success:
             self._terminale_yaz_satir("  Warning: Last command failed.", "sari")
         self.after(500, self._script_siradaki_adim)
+
+    def _script_dosyasi_yukle(self):
+        """Kaydedilmiş bir script dosyasını açar ve çalıştırır."""
+        dosya_yolu = filedialog.askopenfilename(
+            title="Load Terminal Script",
+            initialdir=SCRIPTS_DIR,
+            filetypes=[("PowerShell Script", "*.ps1"), ("All Files", "*.*")]
+        )
+        if not dosya_yolu: return
+        
+        try:
+            komutlar = []
+            with open(dosya_yolu, "r", encoding="utf-8") as f:
+                for satir in f:
+                    satir = satir.strip()
+                    if satir and not satir.startswith("#"):
+                        komutlar.append(satir)
+            
+            if komutlar:
+                self._script_modu_baslat(komutlar)
+            else:
+                self._terminale_yaz_satir("  Selected script contains no commands.", "sari")
+        except Exception as e:
+            self._terminale_yaz_satir(f"  Error loading script: {e}", "kirmizi")
         tb.tag_configure("kirmizi",   foreground=KIRMIZI)
         tb.tag_configure("gri",       foreground=ACIK_GRI)
         tb.tag_configure("beyaz",     foreground=BEYAZ)
