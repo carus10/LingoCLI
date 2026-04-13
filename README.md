@@ -1,11 +1,13 @@
 <div align="center">
 
-# ⚡ LingoCLI: Universal AI Terminal Assistant
+# ⚡ LingoCLI: Modern AI Terminal Assistant
 
-**A local AI-powered terminal assistant for Windows PowerShell, compatible with ANY local LLM.**  
-Runs entirely on your machine — no internet, no API keys, no cloud. Just you and your choice of a local brain.
+**A high-performance, bilingual terminal assistant powered by local AI. Compatible with any LLM via LM Studio.**  
+*Run complex terminal operations using natural language—completely offline, secure, and private.*
 
-![AI Terminal Home](assest/screenshots/home.png)
+---
+
+![Home Screen](assest/screenshots/home%20screen.png)
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)](https://python.org)
 [![LM Studio](https://img.shields.io/badge/LM_Studio-Required-purple?logo=data:image/png;base64,iVBORw0KGgo=)](https://lmstudio.ai)
@@ -16,83 +18,82 @@ Runs entirely on your machine — no internet, no API keys, no cloud. Just you a
 
 ---
 
-## 🎯 What Is This?
+## 🎯 Overview
 
-LingoCLI is a desktop application that lets you **control your computer using natural language**. Instead of memorizing commands, just describe what you want in plain English or Turkish — the AI translates your request into a PowerShell command, shows it to you for approval, and executes it.
+LingoCLI transforms your terminal experience by integrating a local Large Language Model (LLM) directly into your workflow. Instead of memorizing obscure PowerShell syntax, simply describe your intent in **English or Turkish**. The AI generates the precise command, explains its function, and executes it upon your approval.
 
-**Example:**
-```
-You type:  "create a folder called Projects on desktop"
-AI runs:   mkdir $env:USERPROFILE\Desktop\Projects
-```
-
-Everything runs **locally** on your computer using [LM Studio](https://lmstudio.ai). It works with any model you load (Llama 3, Qwen 2.5, etc.), though models with 9B+ parameters are highly recommended for complex tasks.
-
----
-
-## 🧠 Universal Zero-Shot Intelligence
-
-The new **LingoCLI v2.5** uses advanced "Zero-Shot Prompt Engineering" to leverage the raw intelligence of modern LLMs without needing custom weights.
-
-### Why Use LingoCLI?
-* **Model Agnostic:** Load whatever model you want in LM Studio. LingoCLI automatically detects the loaded model and adapts the UI.
-* **Smart JSON Formatting:** Our robust system prompt ensures the AI outputs strict JSON formats for reliable terminal execution.
-* **Context Awareness:** The system provided current working directory (CWD) and project-specific memory summaries.
-* **Fantom Execution:** Commands are executed in a hidden background environment with zero UI lag.
+**Key use cases:**
+*   "Create a backup of this folder and compress it into a zip"
+*   "List all files larger than 100MB in this directory"
+*   "Initialize a new git repository and push it to my remote"
 
 ---
 
 ## ✨ Features
 
-| Feature | Description |
-|---|---|
-| 🖥️ **Real Terminal Look** | Black background, monospaced font, authentic terminal experience |
-| 🤖 **Agnostic AI** | Plug and play with any model loaded in LM Studio |
-| 🚀 **Fantom Execution** | Background command execution with zero UI freeze |
-| 🧠 **Smart Memory** | 3-layer token-based memory with auto-summarization |
-| 📁 **Multi-Project Workspaces** | Up to 3 project slots with isolated memory & directories |
-| 🔒 **Security System** | Dangerous commands require double confirmation via a regex-based kalkan |
-| 🌍 **Bilingual** | Full English & Turkish support |
-| 🎨 **Customizable Colors** | Change terminal colors to suit your style |
+### 🌍 100% Bilingual & Reactive
+Switch instantly between **English and Turkish**. The entire interface, including AI system prompts, command explanations, and even default templates, updates in real-time.
+
+### 📁 Advanced Workspace Management
+Maintain up to **3 project slots**. Each workspace stores its own context, memory summaries, and maintains a persistent working directory.
+
+### 📋 Command Templates
+Save frequent workflows as templates. Supports dynamic parameters (e.g., `git commit -m "{message}"`) and comes with pre-configured templates for Git and System tasks.
+
+### ⚡ Script Mode & Automation
+Record your terminal session and export it as an automated script. Run scripts step-by-step with **AI-powered error correction**—if a step fails, the AI analyzes the error and suggests a fix on the fly.
+
+### 🛡️ Safety & Guardrails
+A regex-based security kalkan (shield) audits every AI-generated command. Destructive operations (system deletes, reboots, etc.) trigger high-visibility danger warnings.
 
 ---
 
-## 🚀 Quick Start (Step by Step)
+## 🖼️ Screenshots
 
-### Step 1: Set Up LM Studio
-1. Install **LM Studio** from [lmstudio.ai](https://lmstudio.ai).
-2. Download any capable model (e.g., **Qwen 2.5 7B/14B** or **Llama 3.1 8B**).
-3. Start the "Local Server" inside LM Studio on port `1234`.
+<div align="center">
 
-### Step 2: Launch LingoCLI
-1. Run `LingoCLI.exe` from the `dist` folder.
-2. The app will automatically detect your loaded model.
-3. Start typing commands!
+| **Main Interface** | **Command Templates** |
+|:---:|:---:|
+| ![Home](assest/screenshots/home%20screen.png) | ![Templates](assest/screenshots/Command%20Templates.png) |
+| **Project Management** | **Advanced Settings** |
+| ![Projects](assest/screenshots/project.png) | ![Settings](assest/screenshots/settings.png) |
 
----
-
-## 📁 Multi-Project Workspaces
-
-LingoCLI supports up to **3 project workspaces**. Each workspace maintains:
-1. **Isolated Memory:** Conversation history is stored per project.
-2. **Locked Directory:** Commands always run inside the project folder.
+</div>
 
 ---
 
-## 🔒 Security
+## 🚀 Installation & Setup
 
-We don't trust the AI blindly. Every command is:
-1. **Shown for Approval:** You must click "Çalıştır" (Run) for every command.
-2. **Regex Filtered:** Destructive patterns (e.g., `rm -rf C:\Windows`) are flagged for extra confirmation.
+### 1. Requirements
+*   **OS**: Windows 10/11 (with PowerShell)
+*   **Hardware**: 8GB+ RAM recommended (for local LLM)
+*   **Software**: [LM Studio](https://lmstudio.ai)
+
+### 2. Prepare the AI (LM Studio)
+1.  Download and install **LM Studio**.
+2.  Search for and download the **Recommended Model**: `Qwen 3.5 4B` (or Qwen 2.5 3B/7B for peak performance).
+3.  Navigate to the **AI Chat / Local Server** tab.
+4.  Load the model and **Start Server** on port `1234`.
+
+### 3. Launch LingoCLI
+1.  Navigate to the `dist` folder.
+2.  Run **`AI_Terminal.exe`**.
+3.  The app will automatically detect your model and workspace—you're ready to go!
 
 ---
 
-## 🛠️ Installation (Developers)
+## 🛠️ For Developers
+
+If you wish to run from source or contribute:
 
 ```bash
-git clone https://github.com/Cihan10/LingoCLI.git
-cd LingoCLI
+# Clone the repository
+git clone https://github.com/carus10/LingoCLI.git
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Run the application
 python ai_terminal_asistan.py
 ```
 
@@ -101,3 +102,9 @@ python ai_terminal_asistan.py
 ## ⚖️ License
 
 Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ for the terminal enthusiasts by <b>LingoCLI AI Team</b></sub>
+</div>
