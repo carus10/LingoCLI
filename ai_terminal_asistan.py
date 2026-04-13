@@ -109,8 +109,8 @@ def ayarlari_yukle() -> dict:
             with open(AYAR_DOSYASI, "r", encoding="utf-8") as f:
                 kayitli = json.load(f)
                 varsayilan.update(kayitli)
-    except Exception:
-        pass
+    except (json.JSONDecodeError, Exception) as e:
+        log_mesaj(f"Config corruption or error: {e}. Using defaults.", "WARNING")
     return varsayilan
 
 def ayarlari_kaydet(ayarlar: dict):
@@ -132,8 +132,8 @@ def workspaces_yukle() -> dict:
                 if len(slots) < 3:
                      slots.extend([None] * (3 - len(slots)))
                 varsayilan["slots"] = slots[:3]
-    except Exception:
-        pass
+    except (json.JSONDecodeError, Exception) as e:
+        log_mesaj(f"Workspace data corruption: {e}. Resetting.", "WARNING")
     return varsayilan
 
 def workspaces_kaydet(veriler: dict):
@@ -153,8 +153,8 @@ def gecmis_yukle() -> dict:
             with open(HISTORY_DOSYASI, "r", encoding="utf-8") as f:
                 kayitli = json.load(f)
                 varsayilan.update(kayitli)
-    except Exception:
-        pass
+    except (json.JSONDecodeError, Exception) as e:
+        log_mesaj(f"History corruption: {e}. Starting fresh.", "WARNING")
     return varsayilan
 
 def gecmis_kaydet(veriler: dict):
@@ -175,8 +175,8 @@ def sablonlar_yukle() -> list:
         if os.path.exists(TEMPLATES_DOSYASI):
             with open(TEMPLATES_DOSYASI, "r", encoding="utf-8") as f:
                 return json.load(f)
-    except Exception:
-        pass
+    except (json.JSONDecodeError, Exception) as e:
+        log_mesaj(f"Templates corruption: {e}. Restoring defaults.", "WARNING")
     return varsayilan
 
 def sablonlar_kaydet(veriler: list):
@@ -1149,7 +1149,7 @@ class AITerminalAsistani(ctk.CTk):
                 self._yukleniyor(True)
                 
                 def _callback(analiz):
-                    self._yukleniyor(False)
+                    self.after(0, lambda: self._yukleniyor(False))
                     if not analiz: return
                     
                     fix_cmd = ""
@@ -1159,16 +1159,16 @@ class AITerminalAsistani(ctk.CTk):
                             break
                     
                     if fix_cmd:
-                        self._terminale_yaz_satir(f"  AI Suggestion found. Updating step...", "sari")
+                        self.after(0, lambda: self._terminale_yaz_satir(f"  {t(self.dil, 'script_mode_ai_updating')}", "sari"))
                         self._script_komutlar[self._script_index] = fix_cmd
-                        self._script_siradaki_adim()
+                        self.after(100, self._script_siradaki_adim)
                     else:
-                        self._terminale_yaz_satir("  AI couldn't find a fix.", "kirmizi")
+                        self.after(0, lambda: self._terminale_yaz_satir(f"  {t(self.dil, 'script_mode_ai_no_fix')}", "kirmizi"))
 
                 threading.Thread(target=lambda: _callback(hatayi_analiz_et("Command failed", last_cmd, self.dil, self.model_id)), daemon=True).start()
 
-            ctk.CTkButton(fix_frame, text="Ask AI to Fix & Retry", fg_color="#c678dd", command=ai_fix_script).pack(side="left", padx=4)
-            ctk.CTkButton(fix_frame, text="Continue anyway", fg_color="#2a2a2a", command=continue_anyway).pack(side="left", padx=4)
+            ctk.CTkButton(fix_frame, text=t(self.dil, "script_mode_ai_fix"), fg_color="#c678dd", command=ai_fix_script).pack(side="left", padx=4)
+            ctk.CTkButton(fix_frame, text=t(self.dil, "script_mode_continue"), fg_color="#2a2a2a", command=continue_anyway).pack(side="left", padx=4)
             
             self.terminal._textbox.window_create("end", window=fix_frame)
             self.terminal._textbox.insert("end", "\n")
@@ -1348,8 +1348,7 @@ class AITerminalAsistani(ctk.CTk):
                     ozetlenecek = [ozet_mesaj] + ozetlenecek
 
                 threading.Thread(
-                    target=self._ozetleme_yap,
-                    args=(ozetlenecek, korunan),
+                    target=lambda: self._ozetleme_yap(ozetlenecek, korunan),
                     daemon=True).start()
 
             self._hafiza_guncelle()
@@ -1635,7 +1634,7 @@ class AITerminalAsistani(ctk.CTk):
 
     def _ozetleme_yap(self, ozetlenecek: list, korunan: list):
         yeni_ozet = gecmisi_ozetle(ozetlenecek, dil=self.dil, active_model=self.model_id)
-        self.after(0, self._ozetleme_tamamlandi, yeni_ozet, korunan)
+        self.after(0, lambda: self._ozetleme_tamamlandi(yeni_ozet, korunan))
 
     def _ozetleme_tamamlandi(self, yeni_ozet: str, korunan: list):
         eski_token = gecmis_token_sayisi(self.gecmis) + token_tahmin(self.gecmis_ozet)
