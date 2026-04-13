@@ -32,7 +32,7 @@ CEVIRILER = {
 
         # ── Welcome ──
         "welcome_title":    "AI Terminal Assistant v2.1",
-        "welcome_model":    "Model: Qwen 2.5 3B · Context: {ctx} tokens",
+        "welcome_model":    "Model: {model} · Context: {ctx} tokens",
         "welcome_db":       "Powered by: LingoCLI-AI Custom Finetuned Model",
         "welcome_memory":   "Memory: Token-based + auto-summarization (unlimited session)",
         "welcome_hint":     "Type your command and press Enter. Click ⓘ for help.\n",
@@ -94,7 +94,7 @@ CEVIRILER = {
         "info_remaining":   "  Remaining:    {r} tokens",
         "info_summaries":   "  Summarized:   {n} times",
         "info_total_msg":   "  Total messages: {n} (this session)",
-        "info_budget_hdr":  "⚙️ Token Budget (Qwen 2.5 3B — {ctx} tokens)",
+        "info_budget_hdr":  "⚙️ Token Budget ({model} — {ctx} tokens)",
         "info_sys_budget":  "  System prompt: ~{n} tokens",
         "info_hist_budget": "  History budget: ~{n} tokens",
         "info_resp_budget": "  Response budget: ~{n} tokens",
@@ -181,7 +181,7 @@ CEVIRILER = {
 
         # ── Script Export ──
         "script_export":    "📤 Export Script",
-        "script_save":      "💾 Save Session as Script",
+        "script_save":      "💾 Save Session",
         "script_run":       "▶️ Run Script",
         "script_step":      "Step {n}/{total}: {cmd}",
         "script_complete":  "Script execution complete",
@@ -214,35 +214,22 @@ CEVIRILER = {
         "common_close":           "Close",
         "common_delete":          "Delete",
 
+        # ── Default Templates ──
+        "tmpl_git_setup_name":    "Git: Setup New Repo",
+        "tmpl_git_setup_desc":    "Initialize git and push to a new repo for the first time",
+        "tmpl_git_push_name":     "Git: Smart Push",
+        "tmpl_git_push_desc":     "Add, commit and push changes in one go",
+        "tmpl_git_undo_name":     "Git: Undo Last Commit",
+        "tmpl_git_undo_desc":     "Undo last commit but keep changes",
+        "tmpl_sys_list_name":     "Templates: List Files",
+        "tmpl_sys_list_desc":     "List files with details",
+
         # ── AI System Prompts ──
         "sys_instruction":  "You are an expert Windows OS and PowerShell Assistant. Your task is to convert user requests into executable terminal commands.\nRULES:\n1. Output MUST be a valid JSON object. No markdown blocks, no conversational text.\n2. JSON Keys: \"type\" (command_explained), \"explain\" (brief text), \"content\" (the command).\n3. Use absolute paths when unsure. Use $env:USERPROFILE\\Desktop for desktop.\n4. Combine multiple steps with ';' or '&&'.\n5. Be concise and accurate. Do not apologize.",
         "sys_summarize":    "Summarize the following conversation very briefly (3-4 sentences) in English.",
         "sys_current_dir":  "Current directory: {d}",
         "sys_context_sum":  "Context summary: {s}",
         "sys_lang_name":    "English",
-
-        # ── Script Mode UI ──
-        "script_mode_title":     "SCRIPT MODE",
-        "script_mode_finished":  "SCRIPT FINISHED",
-        "script_mode_next":      "Next: {c}",
-        "script_mode_aborted":   "Script aborted.",
-        "script_mode_run":       "RUN (y)",
-        "script_mode_skip":      "SKIP (s)",
-        "script_mode_stop":      "STOP",
-        "script_mode_step_failed": "Step failed.",
-        "script_mode_ai_fix":    "Ask AI to Fix & Retry",
-        "script_mode_continue":  "Continue anyway",
-        "script_mode_ai_updating": "AI Suggestion found. Updating step...",
-        "script_mode_ai_no_fix": "AI couldn't find a fix.",
-
-        # ── Misc / UI ──
-        "history_show_favorites": "Show Favorites Only",
-        "template_param_title":   "Template Parameters",
-        "template_param_prepare": "PREPARE COMMAND",
-        "template_param_label":   "Template: {n}",
-        "flow_multi_step":        "Multi-step flow detected: {n}",
-        "common_close":           "Close",
-        "common_delete":          "Delete",
     },
 
     # ══════════════════════════════════════════
@@ -269,8 +256,8 @@ CEVIRILER = {
 
         # ── Welcome ──
         "welcome_title":    "AI Terminal Asistanı v2.1",
-        "welcome_model":    "Model: Qwen 2.5 3B · Context: {ctx} token",
-        "welcome_db":       "Guce Sahip: LingoCLI-AI (Özel Eğitilmiş) Model",
+        "welcome_model":    "Model: {model} · Context: {ctx} token",
+        "welcome_db":       "Güç Alan: LingoCLI-AI (Özel Eğitilmiş) Model",
         "welcome_memory":   "Hafıza: Token tabanlı + otomatik özetleme (sınırsız oturum)",
         "welcome_hint":     "Komutunuzu yazıp Enter'a basın. Yardım için ⓘ butonuna tıklayın.\n",
 
@@ -331,7 +318,7 @@ CEVIRILER = {
         "info_remaining":   "  Kalan:         {r} token",
         "info_summaries":   "  Özetleme:      {n} kez yapıldı",
         "info_total_msg":   "  Toplam mesaj:  {n} (bu oturumda)",
-        "info_budget_hdr":  "⚙️ Token Bütçesi (Qwen 2.5 3B — {ctx} token)",
+        "info_budget_hdr":  "⚙️ Token Bütçesi ({model} — {ctx} token)",
         "info_sys_budget":  "  Sistem promptu: ~{n} token",
         "info_hist_budget": "  Geçmiş bütçe:   ~{n} token",
         "info_resp_budget": "  Yanıt bütçe:    ~{n} token",
@@ -375,7 +362,7 @@ CEVIRILER = {
         "info_ws_dir":      "  Dizin: {d}",
         "info_ws_none":     "  Aktif çalışma alanı yok (varsayılan mod)",
         "info_ws_slots":    "  Kullanılan slot: {u}/3",
-        "info_ws_how":      "  Her çalışma alanı kendi hafızasını saklar. Proje\n  değiştirdiğinizde hafıza diske dondurulur ve\n  geri döndüğünüzde otomatik yüklenir.",
+        "info_ws_how":      "  Her çalışma alanı kendi hafızasını saklar. Proje\n  değiştirdiğinizde hafıza diske dondurulur ve\n  restored edildiğinde otomatik yüklenir.",
 
         # ── AI prompt keywords ──
         "ai_desc_keyword":  "AÇIKLAMA",
@@ -451,35 +438,22 @@ CEVIRILER = {
         "common_close":           "Kapat",
         "common_delete":          "Sil",
 
+        # ── Default Templates ──
+        "tmpl_git_setup_name":    "Git: Yeni Repo Kur",
+        "tmpl_git_setup_desc":    "Git'i başlat ve ilk kez yeni bir repoya gönder",
+        "tmpl_git_push_name":     "Git: Akıllı Push",
+        "tmpl_git_push_desc":     "Ekle, commit yap ve tek seferde pushla",
+        "tmpl_git_undo_name":     "Git: Son Commit'i Geri Al",
+        "tmpl_git_undo_desc":     "Son commit işlemini dosyaları koruyarak geri al",
+        "tmpl_sys_list_name":     "Şablon: Dosyaları Listele",
+        "tmpl_sys_list_desc":     "Dosyaları detaylarıyla listele",
+
         # ── AI System Prompts ──
         "sys_instruction":  "Sen uzman bir Windows ve PowerShell asistanısın. Görevin, kullanıcı isteklerini çalıştırılabilir terminal komutlarına dönüştürmektir.\nKURALLAR:\n1. Yanıt SADECE geçerli bir JSON objesi olmalıdır. Markdown bloğu veya açıklama metni ekleme.\n2. JSON Anahtarları: \"type\" (command_explained), \"explain\" (kısa açıklama), \"content\" (komut).\n3. Masaüstü için $env:USERPROFILE\\Desktop gibi mutlak yollar kullan.\n4. Çoklu adımları ';' veya '&&' ile birleştir.\n5. Kısa ve net ol. Gereksiz özür veya giriş metni kullanma.",
         "sys_summarize":    "Aşağıdaki konuşmayı Türkçe olarak çok kısa (3-4 cümle) özetle.",
         "sys_current_dir":  "Mevcut dizin: {d}",
         "sys_context_sum":  "Bağlam özeti: {s}",
         "sys_lang_name":    "Türkçe",
-
-        # ── Script Mode UI ──
-        "script_mode_title":     "SCRIPT MODU",
-        "script_mode_finished":  "SCRIPT TAMAMLANDI",
-        "script_mode_next":      "Sıradaki: {c}",
-        "script_mode_aborted":   "Script durduruldu.",
-        "script_mode_run":       "ÇALIŞTIR (y)",
-        "script_mode_skip":      "ATLA (s)",
-        "script_mode_stop":      "DURDUR",
-        "script_mode_step_failed": "Adım başarısız oldu.",
-        "script_mode_ai_fix":    "AI ile Düzelt ve Tekrar Dene",
-        "script_mode_continue":  "Yine de devam et",
-        "script_mode_ai_updating": "AI Önerisi bulundu. Adım güncelleniyor...",
-        "script_mode_ai_no_fix": "AI çözüm bulamadı.",
-
-        # ── Misc / UI ──
-        "history_show_favorites": "Sadece Favorileri Göster",
-        "template_param_title":   "Şablon Parametreleri",
-        "template_param_prepare": "KOMUTU HAZIRLA",
-        "template_param_label":   "Şablon: {n}",
-        "flow_multi_step":        "Çok adımlı akış algılandı: {n}",
-        "common_close":           "Kapat",
-        "common_delete":          "Sil",
     },
 }
 

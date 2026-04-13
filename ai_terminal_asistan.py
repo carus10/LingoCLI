@@ -166,10 +166,10 @@ def gecmis_kaydet(veriler: dict):
 
 def sablonlar_yukle() -> list:
     varsayilan = [
-        {"ad": "Git: Setup New Repo", "komut": 'git init; git add .; git commit -m "initial commit"; git branch -M main; git remote add origin {repo_url}; git push -u origin main', "aciklama": "Initialize git and push to a new repo for the first time"},
-        {"ad": "Git: Smart Push", "komut": 'git add .; git commit -m "{mesaj}"; git push', "aciklama": "Add, commit and push changes in one go"},
-        {"ad": "Git: Undo Last Commit", "komut": "git reset --soft HEAD~1", "aciklama": "Undo last commit but keep changes"},
-        {"ad": "Templates: List Files", "komut": 'Get-ChildItem -Path "{yol}" | Select-Object Name, Length, LastWriteTime', "aciklama": "Dosyalari listele"},
+        {"id": "tmpl_git_setup", "ad": "Git: Setup New Repo", "komut": 'git init; git add .; git commit -m "initial commit"; git branch -M main; git remote add origin {repo_url}; git push -u origin main', "aciklama": "Initialize git and push to a new repo for the first time"},
+        {"id": "tmpl_git_push", "ad": "Git: Smart Push", "komut": 'git add .; git commit -m "{mesaj}"; git push', "aciklama": "Add, commit and push changes in one go"},
+        {"id": "tmpl_git_undo", "ad": "Git: Undo Last Commit", "komut": "git reset --soft HEAD~1", "aciklama": "Undo last commit but keep changes"},
+        {"id": "tmpl_sys_list", "ad": "Templates: List Files", "komut": 'Get-ChildItem -Path "{yol}" | Select-Object Name, Length, LastWriteTime', "aciklama": "Dosyalari listele"},
     ]
     try:
         if os.path.exists(TEMPLATES_DOSYASI):
@@ -720,6 +720,9 @@ class AITerminalAsistani(ctk.CTk):
         self.komut_gecmisi = self.komut_gecmisi_data.get("komutlar", [])
         self.history_index = -1
         self.history_active = False
+
+        self.history_window = None
+        self.templates_window = None
 
         # Templates
         self.sablonlar = sablonlar_yukle()
@@ -1490,8 +1493,20 @@ class AITerminalAsistani(ctk.CTk):
         self.durum_lbl.configure(text=t(self.dil, "ready"))
         self.yeni_oturum_btn.configure(text=t(self.dil, "new_session"))
         self.ws_btn.configure(text=t(self.dil, "ws_btn"))
+        self.templates_btn.configure(text=t(self.dil, "templates_btn"))
+        self.script_btn.configure(text=t(self.dil, "script_save"))
+        self.script_run_btn.configure(text=t(self.dil, "script_run"))
+        self.hafiza_lbl.configure(text=f"{t(self.dil, 'memory')}: 0%") # Value will update on next call
+
         self.prompt_lbl.configure(text=self._prompt_metni_al())
         self.giris.configure(placeholder_text=t(self.dil, "placeholder"))
+        
+        # Refresh popups
+        if self.templates_window and self.templates_window.winfo_exists():
+            self.templates_window.refresh(self.dil)
+        if self.history_window and self.history_window.winfo_exists():
+            self.history_window._liste_guncelle() # Assuming history list refresh inherits dil
+        
         self._hafiza_guncelle()
 
     def _uygulama_kapat(self):
@@ -2137,18 +2152,28 @@ class SablonPenceresi(ctk.CTkToplevel):
         self.kaydet_callback = kaydet_callback
         self.dil = dil
         
+        self.title_lbl = None
+        self.hint_lbl = None
+        self.new_btn = None
+        self.close_btn = None
+        
         # Title
-        ctk.CTkLabel(self, text=t(dil, "templates_title"),
+        self.title_lbl = ctk.CTkLabel(self, text=t(dil, "templates_title"),
             font=ctk.CTkFont(family=FONT, size=16, weight="bold"),
-            text_color="#cccccc").pack(pady=(20, 10))
+            text_color="#cccccc")
+        self.title_lbl.pack(pady=(20, 10))
         
         # Hint
-        ctk.CTkLabel(self, text=t(dil, "templates_hint"),
-            font=ctk.CTkFont(family=FONT, size=11), text_color=ACIK_GRI).pack(pady=(0, 10))
+        self.hint_lbl = ctk.CTkLabel(self, text=t(dil, "templates_hint"),
+            font=ctk.CTkFont(family=FONT, size=11), text_color=ACIK_GRI)
+        self.hint_lbl.pack(pady=(0, 10))
         
         # Templates list
-        self.liste_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.liste_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        self.main_container = ctk.CTkFrame(self, fg_color="transparent")
+        self.main_container.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        self.liste_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.liste_frame.pack(fill="both", expand=True)
         
         self._liste_guncelle()
         
@@ -2156,19 +2181,21 @@ class SablonPenceresi(ctk.CTkToplevel):
         alt_frame = ctk.CTkFrame(self, fg_color="transparent")
         alt_frame.pack(pady=10)
         
-        ctk.CTkButton(alt_frame, text=t(dil, "templates_new"),
+        self.new_btn = ctk.CTkButton(alt_frame, text=t(dil, "templates_new"),
             width=140, height=32,
             font=ctk.CTkFont(family=FONT, size=12),
             fg_color="#1a3a1a", hover_color="#2a5a2a",
             text_color="#16c60c", corner_radius=4,
-            command=self._yeni_sablon_ekle).pack(side="left", padx=6)
+            command=self._yeni_sablon_ekle)
+        self.new_btn.pack(side="left", padx=6)
         
-        ctk.CTkButton(alt_frame, text=t(self.dil, "common_close"),
+        self.close_btn = ctk.CTkButton(alt_frame, text=t(self.dil, "common_close"),
             width=100, height=32,
             font=ctk.CTkFont(family=FONT, size=12),
             fg_color="#2a2a2a", hover_color="#3a3a3a",
             text_color="#cccccc", corner_radius=4,
-            command=self.destroy).pack(side="left", padx=6)
+            command=self.destroy)
+        self.close_btn.pack(side="left", padx=6)
     
     def _liste_guncelle(self):
         for widget in self.liste_frame.winfo_children():
@@ -2186,10 +2213,15 @@ class SablonPenceresi(ctk.CTkToplevel):
             sol = ctk.CTkFrame(satir, fg_color="transparent")
             sol.pack(side="left", fill="x", expand=True, padx=10, pady=8)
             
-            ctk.CTkLabel(sol, text=f"📋 {sablon['ad']}",
+            # Yerelleştirme Desteği (Varsayılan şablonlar için)
+            sablon_id = sablon.get("id", "")
+            gorunur_ad = t(self.dil, f"{sablon_id}_name", d=sablon['ad']) if sablon_id else sablon['ad']
+            gorunur_aciklama = t(self.dil, f"{sablon_id}_desc", d=sablon.get('aciklama', '')) if sablon_id else sablon.get('aciklama', '')
+
+            ctk.CTkLabel(sol, text=f"📋 {gorunur_ad}",
                 font=ctk.CTkFont(family=FONT, size=13, weight="bold"),
                 text_color="#16c60c", anchor="w").pack(anchor="w")
-            ctk.CTkLabel(sol, text=sablon.get("aciklama", ""),
+            ctk.CTkLabel(sol, text=gorunur_aciklama,
                 font=ctk.CTkFont(family=FONT, size=11), text_color=ACIK_GRI,
                 anchor="w").pack(anchor="w")
             ctk.CTkLabel(sol, text=sablon['komut'][:70] + ("..." if len(sablon['komut']) > 70 else ""),
@@ -2217,8 +2249,22 @@ class SablonPenceresi(ctk.CTkToplevel):
     def _sil(self, index):
         if 0 <= index < len(self.sablonlar):
             self.sablonlar.pop(index)
-            sablonlar_kaydet(self.sablonlar)
+            self.kaydet_callback(self.sablonlar)
             self._liste_guncelle()
+
+    def refresh(self, new_dil):
+        """Update window labels when language changes."""
+        self.dil = new_dil
+        self.title(t(self.dil, "templates_title"))
+        if hasattr(self, "title_lbl") and self.title_lbl: 
+            self.title_lbl.configure(text=t(self.dil, "templates_title"))
+        if hasattr(self, "hint_lbl") and self.hint_lbl: 
+            self.hint_lbl.configure(text=t(self.dil, "templates_hint"))
+        if hasattr(self, "new_btn") and self.new_btn: 
+            self.new_btn.configure(text=t(self.dil, "templates_new"))
+        if hasattr(self, "close_btn") and self.close_btn: 
+            self.close_btn.configure(text=t(self.dil, "common_close"))
+        self._liste_guncelle()
     
     def _yeni_sablon_ekle(self):
         """Yeni şablon ekleme formu."""
