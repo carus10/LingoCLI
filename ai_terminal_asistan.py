@@ -805,7 +805,7 @@ class AITerminalAsistani(ctk.CTk):
         self.script_btn.pack(side="left", padx=2)
 
         # Script Run button
-        self.script_run_btn = ctk.CTkButton(bar, text="▶ Run Script",
+        self.script_run_btn = ctk.CTkButton(bar, text=t(self.dil, "script_run"),
             width=100, height=24,
             font=ctk.CTkFont(family=FONT, size=10),
             fg_color="#1a2a3a", hover_color="#2a3a4a",
@@ -1506,7 +1506,7 @@ class AITerminalAsistani(ctk.CTk):
     def _hosgeldin_yaz(self):
         d = self.dil
         self._terminale_yaz_satir(t(d, "welcome_title"), self.ayarlar["komut_renk"])
-        self._terminale_yaz_satir(t(d, "welcome_model", ctx=CONTEXT_LIMIT, model=getattr(self, 'model_id', 'Qwen 2.5')), ACIK_GRI)
+        self._terminale_yaz_satir(t(d, "welcome_model", ctx=MODEL_CONTEXT, model=getattr(self, 'model_id', 'Qwen 2.5')), ACIK_GRI)
         self._terminale_yaz_satir(t(d, "welcome_memory"), ACIK_GRI)
         self._terminale_yaz_satir("─" * 70, GRI)
         self._terminale_yaz_satir(t(d, "welcome_hint"), ACIK_GRI)
@@ -1833,7 +1833,7 @@ class BootScreen(ctk.CTk):
         self.geometry(f"480x260+{x}+{y}")
 
         # Header
-        ctk.CTkLabel(self, text="⚡ AI Terminal",
+        ctk.CTkLabel(self, text=t(self.dil, "bar_title").strip(),
             font=ctk.CTkFont(family=FONT, size=24, weight="bold"),
             text_color="#c678dd").pack(pady=(30, 8))
 
