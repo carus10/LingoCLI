@@ -166,10 +166,10 @@ def gecmis_kaydet(veriler: dict):
 
 def sablonlar_yukle() -> list:
     varsayilan = [
-        {"ad": "Git Commit", "komut": 'git add .; git commit -m "{mesaj}"', "aciklama": "Tum degisiklikleri commit et"},
-        {"ad": "Git Push", "komut": "git push", "aciklama": "Remote'a push yap"},
-        {"ad": "Create Folder", "komut": 'New-Item -Path "{yol}" -ItemType Directory -Force', "aciklama": "Klasor olustur"},
-        {"ad": "List Files", "komut": "Get-ChildItem -Path \"{yol}\" | Select-Object Name, Length, LastWriteTime", "aciklama": "Dosyalari listele"},
+        {"ad": "Git: Setup New Repo", "komut": 'git init; git add .; git commit -m "initial commit"; git branch -M main; git remote add origin {repo_url}; git push -u origin main', "aciklama": "Initialize git and push to a new repo for the first time"},
+        {"ad": "Git: Smart Push", "komut": 'git add .; git commit -m "{mesaj}"; git push', "aciklama": "Add, commit and push changes in one go"},
+        {"ad": "Git: Undo Last Commit", "komut": "git reset --soft HEAD~1", "aciklama": "Undo last commit but keep changes"},
+        {"ad": "Templates: List Files", "komut": 'Get-ChildItem -Path "{yol}" | Select-Object Name, Length, LastWriteTime', "aciklama": "Dosyalari listele"},
     ]
     try:
         if os.path.exists(TEMPLATES_DOSYASI):
@@ -938,10 +938,17 @@ class AITerminalAsistani(ctk.CTk):
             self._sablon_uygula(komut, sablon.get("ad", "Template"))
 
     def _sablon_uygula(self, final_komut, ad):
-        self.giris.delete(0, "end")
-        self.giris.insert(0, final_komut)
         self.giris.focus_set()
-        self._terminale_yaz_satir(f"  Template loaded: {ad}", "gri")
+        
+        # Check for multi-step script
+        if ";" in final_komut:
+            komutlar = [c.strip() for c in final_komut.split(";") if c.strip()]
+            self._terminale_yaz_satir(f"  Multi-step flow detected: {ad}", "gri")
+            self._script_modu_baslat(komutlar)
+        else:
+            self.giris.delete(0, "end")
+            self.giris.insert(0, final_komut)
+            self._terminale_yaz_satir(f"  Template loaded: {ad}", "gri")
 
     def _sablon_kaydet(self, sablon):
         """Yeni şablon kaydet."""
@@ -1118,10 +1125,54 @@ class AITerminalAsistani(ctk.CTk):
         self.terminal._textbox.see("end")
 
     def _script_bitti(self, success):
-        self._script_index += 1
         if not success:
-            self._terminale_yaz_satir("  Warning: Last command failed.", "sari")
-        self.after(500, self._script_siradaki_adim)
+            self._terminale_yaz_satir("  [!] Step failed.", "kirmizi")
+            # Extra option for AI fix within script mode
+            self.terminal.configure(state="normal")
+            fix_frame = ctk.CTkFrame(self.terminal._textbox, fg_color="transparent", height=34)
+            
+            def continue_anyway():
+                fix_frame.destroy()
+                self._script_index += 1
+                self._script_siradaki_adim()
+                
+            def ai_fix_script():
+                fix_frame.destroy()
+                # Get last failure output
+                if not self.oturum_komutlari: return
+                last_cmd = self.oturum_komutlari[-1]
+                self._terminale_yaz_satir(t(self.dil, "error_analyzing"), "gri")
+                self._yukleniyor(True)
+                
+                def _callback(analiz):
+                    self._yukleniyor(False)
+                    if not analiz: return
+                    
+                    fix_cmd = ""
+                    for satir in analiz.split("\n"):
+                        if satir.upper().startswith("FIX:"):
+                            fix_cmd = satir[4:].strip()
+                            break
+                    
+                    if fix_cmd:
+                        self._terminale_yaz_satir(f"  AI Suggestion found. Updating step...", "sari")
+                        self._script_komutlar[self._script_index] = fix_cmd
+                        self._script_siradaki_adim()
+                    else:
+                        self._terminale_yaz_satir("  AI couldn't find a fix.", "kirmizi")
+
+                threading.Thread(target=lambda: _callback(hatayi_analiz_et("Command failed", last_cmd, self.dil, self.model_id)), daemon=True).start()
+
+            ctk.CTkButton(fix_frame, text="Ask AI to Fix & Retry", fg_color="#c678dd", command=ai_fix_script).pack(side="left", padx=4)
+            ctk.CTkButton(fix_frame, text="Continue anyway", fg_color="#2a2a2a", command=continue_anyway).pack(side="left", padx=4)
+            
+            self.terminal._textbox.window_create("end", window=fix_frame)
+            self.terminal._textbox.insert("end", "\n")
+            self.terminal.configure(state="disabled")
+            self.terminal._textbox.see("end")
+        else:
+            self._script_index += 1
+            self.after(500, self._script_siradaki_adim)
 
     def _script_dosyasi_yukle(self):
         """Kaydedilmiş bir script dosyasını açar ve çalıştırır."""
