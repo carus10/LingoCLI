@@ -213,6 +213,36 @@ CEVIRILER = {
         "flow_multi_step":        "Multi-step flow detected: {n}",
         "common_close":           "Close",
         "common_delete":          "Delete",
+
+        # ── AI System Prompts ──
+        "sys_instruction":  "You are an expert Windows OS and PowerShell Assistant. Your task is to convert user requests into executable terminal commands.\nRULES:\n1. Output MUST be a valid JSON object. No markdown blocks, no conversational text.\n2. JSON Keys: \"type\" (command_explained), \"explain\" (brief text), \"content\" (the command).\n3. Use absolute paths when unsure. Use $env:USERPROFILE\\Desktop for desktop.\n4. Combine multiple steps with ';' or '&&'.\n5. Be concise and accurate. Do not apologize.",
+        "sys_summarize":    "Summarize the following conversation very briefly (3-4 sentences) in English.",
+        "sys_current_dir":  "Current directory: {d}",
+        "sys_context_sum":  "Context summary: {s}",
+        "sys_lang_name":    "English",
+
+        # ── Script Mode UI ──
+        "script_mode_title":     "SCRIPT MODE",
+        "script_mode_finished":  "SCRIPT FINISHED",
+        "script_mode_next":      "Next: {c}",
+        "script_mode_aborted":   "Script aborted.",
+        "script_mode_run":       "RUN (y)",
+        "script_mode_skip":      "SKIP (s)",
+        "script_mode_stop":      "STOP",
+        "script_mode_step_failed": "Step failed.",
+        "script_mode_ai_fix":    "Ask AI to Fix & Retry",
+        "script_mode_continue":  "Continue anyway",
+        "script_mode_ai_updating": "AI Suggestion found. Updating step...",
+        "script_mode_ai_no_fix": "AI couldn't find a fix.",
+
+        # ── Misc / UI ──
+        "history_show_favorites": "Show Favorites Only",
+        "template_param_title":   "Template Parameters",
+        "template_param_prepare": "PREPARE COMMAND",
+        "template_param_label":   "Template: {n}",
+        "flow_multi_step":        "Multi-step flow detected: {n}",
+        "common_close":           "Close",
+        "common_delete":          "Delete",
     },
 
     # ══════════════════════════════════════════
@@ -397,6 +427,36 @@ CEVIRILER = {
         "script_skip":      "Bu komut atılsın mı?",
         "script_name":      "Script Adı",
         "script_hint":      "Bu oturumdaki tüm komutlar kaydedilecek",
+
+        # ── Script Mode UI ──
+        "script_mode_title":     "SCRIPT MODU",
+        "script_mode_finished":  "SCRIPT TAMAMLANDI",
+        "script_mode_next":      "Sıradaki: {c}",
+        "script_mode_aborted":   "Script durduruldu.",
+        "script_mode_run":       "ÇALIŞTIR (y)",
+        "script_mode_skip":      "ATLA (s)",
+        "script_mode_stop":      "DURDUR",
+        "script_mode_step_failed": "Adım başarısız oldu.",
+        "script_mode_ai_fix":    "AI ile Düzelt ve Tekrar Dene",
+        "script_mode_continue":  "Yine de devam et",
+        "script_mode_ai_updating": "AI Önerisi bulundu. Adım güncelleniyor...",
+        "script_mode_ai_no_fix": "AI çözüm bulamadı.",
+
+        # ── Misc / UI ──
+        "history_show_favorites": "Sadece Favorileri Göster",
+        "template_param_title":   "Şablon Parametreleri",
+        "template_param_prepare": "KOMUTU HAZIRLA",
+        "template_param_label":   "Şablon: {n}",
+        "flow_multi_step":        "Çok adımlı akış algılandı: {n}",
+        "common_close":           "Kapat",
+        "common_delete":          "Sil",
+
+        # ── AI System Prompts ──
+        "sys_instruction":  "Sen uzman bir Windows ve PowerShell asistanısın. Görevin, kullanıcı isteklerini çalıştırılabilir terminal komutlarına dönüştürmektir.\nKURALLAR:\n1. Yanıt SADECE geçerli bir JSON objesi olmalıdır. Markdown bloğu veya açıklama metni ekleme.\n2. JSON Anahtarları: \"type\" (command_explained), \"explain\" (kısa açıklama), \"content\" (komut).\n3. Masaüstü için $env:USERPROFILE\\Desktop gibi mutlak yollar kullan.\n4. Çoklu adımları ';' veya '&&' ile birleştir.\n5. Kısa ve net ol. Gereksiz özür veya giriş metni kullanma.",
+        "sys_summarize":    "Aşağıdaki konuşmayı Türkçe olarak çok kısa (3-4 cümle) özetle.",
+        "sys_current_dir":  "Mevcut dizin: {d}",
+        "sys_context_sum":  "Bağlam özeti: {s}",
+        "sys_lang_name":    "Türkçe",
 
         # ── Script Mode UI ──
         "script_mode_title":     "SCRIPT MODU",

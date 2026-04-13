@@ -275,9 +275,9 @@ def modele_sor(kullanici_mesaji: str, gecmis: list = None, ozet: str = "", dil: 
     
     mesajlar = [{"role": "system", "content": prompt}]
     if cwd_bilgisi:
-        mesajlar.append({"role": "system", "content": f"Current directory: {cwd_bilgisi}"})
+        mesajlar.append({"role": "system", "content": t(dil, "sys_current_dir", d=cwd_bilgisi)})
     if ozet:
-        mesajlar.append({"role": "system", "content": f"Context summary: {ozet}"})
+        mesajlar.append({"role": "system", "content": t(dil, "sys_context_sum", s=ozet)})
     
     if gecmis:
         mesajlar.extend(gecmis)
@@ -316,8 +316,7 @@ def gecmisi_ozetle(mesajlar: list, dil: str = "en", active_model: str = None) ->
         satirlar.append(f"{rol}: {m['content']}")
     konusma_metni = "\n".join(satirlar)
 
-    prompt = (
-        f"Aşağıdaki konuşmayı {('Türkçe' if dil=='tr' else 'English')} olarak çok kısa (3-4 cümle) özetle. "
+    prompt = t(dil, "sys_summarize")
         "Sadece teknik değişimleri (dosya/klasör işlemleri) belirt.\n\n" + konusma_metni
     )
     
