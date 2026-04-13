@@ -1483,8 +1483,8 @@ class AITerminalAsistani(ctk.CTk):
         # If language changed, refresh all UI text
         if eski_dil != self.dil:
             self._dil_degistir()
-
-        self._terminale_yaz_satir(t(self.dil, "settings_saved"), "komut")
+        else:
+            self._terminale_yaz_satir(t(self.dil, "settings_saved"), "komut")
 
     def _dil_degistir(self):
         """Refresh all UI labels when language changes."""
@@ -1507,6 +1507,15 @@ class AITerminalAsistani(ctk.CTk):
             self.history_window._liste_guncelle() # Assuming history list refresh inherits dil
         
         self._hafiza_guncelle()
+        
+        # CLEAR AND RE-PRINT TERMINAL (Make home screen reactive)
+        self.terminal.configure(state="normal")
+        self.terminal._textbox.delete("1.0", "end")
+        self.terminal.configure(state="disabled")
+        self._hosgeldin_yaz()
+        
+        # Print confirmation
+        self._terminale_yaz_satir(t(self.dil, "settings_saved"), "komut")
 
     def _uygulama_kapat(self):
         """Uygulama kapanırken workspace hafızasını kaydet."""
