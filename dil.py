@@ -143,6 +143,53 @@ CEVIRILER = {
         # ── AI prompt keywords ──
         "ai_desc_keyword":  "DESCRIPTION",
         "ai_cmd_keyword":   "COMMAND",
+
+        # ── Command History ──
+        "history_title":    "Command History",
+        "history_search":   "Search history...",
+        "history_empty":    "No commands in history",
+        "history_favorite": "★ Favorite",
+        "history_use":      "Use",
+        "history_delete":   "Delete",
+        "history_toggle":   "Toggle Favorite",
+        "history_up":       "↑ Previous",
+        "history_down":     "↓ Next",
+        "history_shortcut": "Press ↑↓ to browse history",
+
+        # ── Templates ──
+        "templates_title":  "Command Templates",
+        "templates_btn":    "📋 Templates",
+        "templates_new":    "+ New Template",
+        "templates_name":   "Template Name",
+        "templates_cmd":    "Command",
+        "templates_desc":   "Description",
+        "templates_save":   "Save Template",
+        "templates_delete": "Delete Template",
+        "templates_empty":  "No templates yet",
+        "templates_use":    "Use",
+        "templates_param":  "Parameter: {p}",
+        "templates_hint":   "Use {param} for placeholders",
+
+        # ── Error Analysis ──
+        "error_analyze":    "🔍 Analyze Error",
+        "error_analyzing":  "  Analyzing error with AI...",
+        "error_suggestion": "💡 Suggestion:",
+        "error_fix":        "Try this fix:",
+        "error_no_fix":     "No automatic fix available",
+        "error_history":    "Error History",
+        "error_clear":      "Clear Error History",
+
+        # ── Script Export ──
+        "script_export":    "📤 Export Script",
+        "script_save":      "💾 Save Session as Script",
+        "script_run":       "▶️ Run Script",
+        "script_step":      "Step {n}/{total}: {cmd}",
+        "script_complete":  "Script execution complete",
+        "script_saved":     "  Script saved: {f}",
+        "script_confirm":   "Run this script?",
+        "script_skip":      "Skip this command?",
+        "script_name":      "Script Name",
+        "script_hint":      "All commands from this session will be saved",
     },
 
     # ══════════════════════════════════════════
@@ -280,6 +327,53 @@ CEVIRILER = {
         # ── AI prompt keywords ──
         "ai_desc_keyword":  "AÇIKLAMA",
         "ai_cmd_keyword":   "KOMUT",
+
+        # ── Command History ──
+        "history_title":    "Komut Geçmişi",
+        "history_search":   "Geçmişte ara...",
+        "history_empty":    "Geçmişte komut yok",
+        "history_favorite": "★ Favori",
+        "history_use":      "Kullan",
+        "history_delete":   "Sil",
+        "history_toggle":   "Favori Aç/Kapa",
+        "history_up":       "↑ Önceki",
+        "history_down":     "↓ Sonraki",
+        "history_shortcut": "Geçmişte gezinmek için ↑↓ tuşlarına bas",
+
+        # ── Templates ──
+        "templates_title":  "Komut Şablonları",
+        "templates_btn":    "📋 Şablonlar",
+        "templates_new":    "+ Yeni Şablon",
+        "templates_name":   "Şablon Adı",
+        "templates_cmd":    "Komut",
+        "templates_desc":   "Açıklama",
+        "templates_save":   "Şablonu Kaydet",
+        "templates_delete": "Şablonu Sil",
+        "templates_empty":  "Henüz şablon yok",
+        "templates_use":    "Kullan",
+        "templates_param":  "Parametre: {p}",
+        "templates_hint":   "Yer tutucu için {param} kullan",
+
+        # ── Error Analysis ──
+        "error_analyze":    "🔍 Hatayı Analiz Et",
+        "error_analyzing":  "  Hata AI ile analiz ediliyor...",
+        "error_suggestion": "💡 Öneri:",
+        "error_fix":        "Şu düzeltmeyi dene:",
+        "error_no_fix":     "Otomatik düzeltme mevcut değil",
+        "error_history":    "Hata Geçmişi",
+        "error_clear":      "Hata Geçmişini Temizle",
+
+        # ── Script Export ──
+        "script_export":    "📤 Script Dışa Aktar",
+        "script_save":      "💾 Oturumu Script Olarak Kaydet",
+        "script_run":       "▶️ Script Çalıştır",
+        "script_step":      "Adım {n}/{total}: {cmd}",
+        "script_complete":  "Script çalıştırma tamamlandı",
+        "script_saved":     "  Script kaydedildi: {f}",
+        "script_confirm":   "Bu script çalıştırılsın mı?",
+        "script_skip":      "Bu komut atılsın mı?",
+        "script_name":      "Script Adı",
+        "script_hint":      "Bu oturumdaki tüm komutlar kaydedilecek",
     },
 }
 

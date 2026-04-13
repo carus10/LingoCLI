@@ -61,6 +61,9 @@ for _old_file in ["terminal_ayarlar.json", "workspaces.json"]:
 # Settings file path (persistent)
 AYAR_DOSYASI = os.path.join(_DATA_DIR, "terminal_ayarlar.json")
 WORKSPACES_DOSYASI = os.path.join(_DATA_DIR, "workspaces.json")
+HISTORY_DOSYASI = os.path.join(_DATA_DIR, "komut_gecmisi.json")
+TEMPLATES_DOSYASI = os.path.join(_DATA_DIR, "sablonlar.json")
+ERROR_HISTORY_DOSYASI = os.path.join(_DATA_DIR, "hata_gecmisi.json")
 
 # App icon path (bundled)
 ICON_PATH = os.path.join(_APP_DIR, "assest", "icon.ico")
@@ -132,6 +135,65 @@ def workspaces_yukle() -> dict:
 def workspaces_kaydet(veriler: dict):
     try:
         with open(WORKSPACES_DOSYASI, "w", encoding="utf-8") as f:
+            json.dump(veriler, f, indent=2)
+    except Exception:
+        pass
+
+def gecmis_yukle() -> dict:
+    varsayilan = {
+        "komutlar": [],  # [{"komut": "...", "zaman": "...", "favori": false}]
+        "index": 0
+    }
+    try:
+        if os.path.exists(HISTORY_DOSYASI):
+            with open(HISTORY_DOSYASI, "r", encoding="utf-8") as f:
+                kayitli = json.load(f)
+                varsayilan.update(kayitli)
+    except Exception:
+        pass
+    return varsayilan
+
+def gecmis_kaydet(veriler: dict):
+    try:
+        with open(HISTORY_DOSYASI, "w", encoding="utf-8") as f:
+            json.dump(veriler, f, indent=2)
+    except Exception:
+        pass
+
+def sablonlar_yukle() -> list:
+    varsayilan = [
+        {"ad": "Git Commit", "komut": 'git add .; git commit -m "{mesaj}"', "aciklama": "Tum degisiklikleri commit et"},
+        {"ad": "Git Push", "komut": "git push", "aciklama": "Remote'a push yap"},
+        {"ad": "Create Folder", "komut": 'New-Item -Path "{yol}" -ItemType Directory -Force', "aciklama": "Klasor olustur"},
+        {"ad": "List Files", "komut": "Get-ChildItem -Path \"{yol}\" | Select-Object Name, Length, LastWriteTime", "aciklama": "Dosyalari listele"},
+    ]
+    try:
+        if os.path.exists(TEMPLATES_DOSYASI):
+            with open(TEMPLATES_DOSYASI, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return varsayilan
+
+def sablonlar_kaydet(veriler: list):
+    try:
+        with open(TEMPLATES_DOSYASI, "w", encoding="utf-8") as f:
+            json.dump(veriler, f, indent=2)
+    except Exception:
+        pass
+
+def hata_gecmisi_yukle() -> list:
+    try:
+        if os.path.exists(ERROR_HISTORY_DOSYASI):
+            with open(ERROR_HISTORY_DOSYASI, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return []
+
+def hata_gecmisi_kaydet(veriler: list):
+    try:
+        with open(ERROR_HISTORY_DOSYASI, "w", encoding="utf-8") as f:
             json.dump(veriler, f, indent=2)
     except Exception:
         pass
@@ -312,6 +374,30 @@ def yaniti_ayristir(ham_metin: str) -> tuple[str, str]:
     return aciklama.strip(), komut.strip()
 
 
+def hatayi_analiz_et(hata_mesaji, basarisiz_komut, dil="en", active_model=None):
+    """AI ile hatayı analiz eder ve çözüm önerisi sunar."""
+    target_model = active_model if active_model else MODEL
+    prompt = (
+        f"Sen bir terminal uzmanısın. Kullanıcı şu komutu çalıştırdı: '{basarisiz_komut}' "
+        f"ve şu hatayı aldı: '{hata_mesaji}'.\n\n"
+        f"Lütfen hatayı {('Türkçe' if dil=='tr' else 'English')} olarak çok kısa açıkla ve "
+        f"eğer mümkünse düzeltilmiş komutu 'FIX: [komut]' formatında ver."
+    )
+    
+    payload = {
+        "model": target_model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+    }
+    try:
+        yanit = requests.post(API_URL, json=payload, timeout=30)
+        yanit.raise_for_status()
+        return yanit.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        log_mesaj(f"Analyze failed: {e}", "WARNING")
+        return None
+
+
 def komutu_calistir(komut: str, hedef_dizin: str = None) -> tuple[bool, str]:
     utf8_on = (
         "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
@@ -320,7 +406,7 @@ def komutu_calistir(komut: str, hedef_dizin: str = None) -> tuple[bool, str]:
     try:
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        
+
         sonuc = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", utf8_on + komut],
             capture_output=True, text=True, encoding="utf-8",
@@ -333,6 +419,41 @@ def komutu_calistir(komut: str, hedef_dizin: str = None) -> tuple[bool, str]:
         return (False, "Command timed out (30s).")
     except Exception as e:
         return (False, f"Command execution failed: {e}")
+
+
+def hatayi_analiz_et(hata_mesaji: str, basarisiz_komut: str, dil: str = "en", active_model: str = None) -> str:
+    """AI kullanarak hatayı analiz et ve öneri sun."""
+    target_model = active_model if active_model else MODEL
+    
+    prompt_en = (
+        f"A PowerShell command failed with an error.\n"
+        f"Command: {basarisiz_komut}\n"
+        f"Error: {hata_mesaji}\n\n"
+        f"Provide a BRIEF explanation of the error and ONE concrete fix command.\n"
+        f"Format: First line = explanation, Second line = fix command (prefix with FIX:)"
+    )
+    
+    prompt_tr = (
+        f"Bir PowerShell komutu hata verdi.\n"
+        f"Komut: {basarisiz_komut}\n"
+        f"Hata: {hata_mesaji}\n\n"
+        f"Hatanın nedenini ve düzeltme komutunu ver.\n"
+        f"Format: İlk satır = açıklama, İkinci satır = düzeltme komutu (FIX: ile başla)"
+    )
+    
+    payload = {
+        "model": target_model,
+        "messages": [{"role": "user", "content": prompt_tr if dil == "tr" else prompt_en}],
+        "temperature": 0.1,
+        "max_tokens": 200,
+    }
+    try:
+        yanit = requests.post(API_URL, json=payload, timeout=30)
+        yanit.raise_for_status()
+        return yanit.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        log_mesaj(f"Error analysis failed: {e}", "WARNING")
+        return ""
 
 
 # ══════════════════════════════════════════════
@@ -581,7 +702,7 @@ class AITerminalAsistani(ctk.CTk):
 
         self.ayarlar = ayarlari_yukle()
         self.dil = self.ayarlar.get("dil", "en")
-        
+
         # Workspace
         self.workspaces_data = workspaces_yukle()
         self.aktif_ws_index = None
@@ -589,6 +710,21 @@ class AITerminalAsistani(ctk.CTk):
         # Dinamik Model Tespiti
         self.model_adi = "..."
         self.model_id = MODEL  # Başlangıçta varsayılan model
+
+        # Command History
+        self.komut_gecmisi_data = gecmis_yukle()
+        self.komut_gecmisi = self.komut_gecmisi_data.get("komutlar", [])
+        self.history_index = -1
+        self.history_active = False
+
+        # Templates
+        self.sablonlar = sablonlar_yukle()
+
+        # Error History
+        self.hata_gecmisi = hata_gecmisi_yukle()
+
+        # Session commands (for script export)
+        self.oturum_komutlari = []
 
         self.title(t(self.dil, "app_title"))
         self.geometry("900x650")
@@ -609,10 +745,10 @@ class AITerminalAsistani(ctk.CTk):
         self._terminal_alani()
         self._giris_satiri()
         self._ortala()
-        
+
         # Dinamik Model Tespiti başlat
         self.after(500, self._dinamik_model_tespit_et)
-        
+
         self._hosgeldin_yaz()
 
         # Kapanırken workspace hafızasını kaydet
@@ -646,6 +782,24 @@ class AITerminalAsistani(ctk.CTk):
             text_color="#c678dd", corner_radius=4,
             command=self._workspace_menusu_ac)
         self.ws_btn.pack(side="left", padx=4)
+
+        # Templates button
+        self.templates_btn = ctk.CTkButton(bar, text=t(self.dil, "templates_btn"),
+            width=100, height=24,
+            font=ctk.CTkFont(family=FONT, size=11),
+            fg_color="#1a2a1a", hover_color="#2a3a2a",
+            text_color="#16c60c", corner_radius=4,
+            command=self._sablonlar_penceresi_ac)
+        self.templates_btn.pack(side="left", padx=4)
+
+        # Script Export button
+        self.script_btn = ctk.CTkButton(bar, text=t(self.dil, "script_save"),
+            width=130, height=24,
+            font=ctk.CTkFont(family=FONT, size=10),
+            fg_color="#2a2a1a", hover_color="#3a3a2a",
+            text_color=SARI, corner_radius=4,
+            command=self._script_olarak_kaydet)
+        self.script_btn.pack(side="left", padx=4)
 
         # Memory progress bar
         hafiza_frame = ctk.CTkFrame(bar, fg_color="transparent", width=180)
@@ -695,7 +849,7 @@ class AITerminalAsistani(ctk.CTk):
         self.durum_lbl.pack(side="right", padx=8)
 
         # Model & Context info label
-        self.model_bilgi_lbl = ctk.CTkLabel(bar, 
+        self.model_bilgi_lbl = ctk.CTkLabel(bar,
             text=f"[{self.model_adi}] {MODEL_CONTEXT}",
             font=ctk.CTkFont(family=FONT, size=11, weight="bold"),
             text_color="#c678dd")
@@ -713,11 +867,161 @@ class AITerminalAsistani(ctk.CTk):
 
     def _renk_tagleri_guncelle(self):
         tb = self.terminal._textbox
-        tb.tag_configure("kullanici", foreground=self.ayarlar["kullanici_renk"])
-        tb.tag_configure("komut",     foreground=self.ayarlar["komut_renk"])
-        tb.tag_configure("aciklama",  foreground=self.ayarlar["aciklama_renk"])
-        tb.tag_configure("prompt",    foreground=self.ayarlar["prompt_renk"])
         tb.tag_configure("sari",      foreground=SARI)
+
+
+    # ──────────────────────────────────────────
+    #  NEW FEATURE METHODS
+    # ──────────────────────────────────────────
+
+    def _history_onceki(self, event=None):
+        """Ok tuşu ile önceki komutlara git."""
+        if not self.komut_gecmisi:
+            return
+        if self.history_index == -1:
+            self.history_index = 0
+        elif self.history_index < len(self.komut_gecmisi) - 1:
+            self.history_index += 1
+        
+        self.giris.delete(0, "end")
+        self.giris.insert(0, self.komut_gecmisi[self.history_index]["komut"])
+        self.history_active = True
+
+    def _history_sonraki(self, event=None):
+        """Ok tuşu ile sonraki komutlara git."""
+        if not self.history_active or self.history_index == -1:
+            return
+        
+        if self.history_index > 0:
+            self.history_index -= 1
+            self.giris.delete(0, "end")
+            self.giris.insert(0, self.komut_gecmisi[self.history_index]["komut"])
+        else:
+            self.history_index = -1
+            self.history_active = False
+            self.giris.delete(0, "end")
+
+    def _history_arama_ac(self):
+        """Komut geçmişinde arama penceresi aç."""
+        HistoryPenceresi(self, self.komut_gecmisi, self._history_komut_kullan, self.dil)
+
+    def _history_komut_kullan(self, komut):
+        """Geçmişten seçilen komutu kullan."""
+        self.giris.delete(0, "end")
+        self.giris.insert(0, komut)
+        self.giris.focus_set()
+
+    def _sablonlar_penceresi_ac(self):
+        """Şablonlar penceresini aç."""
+        SablonPenceresi(self, self.sablonlar, self._sablon_kullan, self._sablon_kaydet, self.dil)
+
+    def _sablon_kullan(self, sablon):
+        """Şablonu giriş alanına yerleştir."""
+        self.giris.delete(0, "end")
+        self.giris.insert(0, sablon["komut"])
+        self.giris.focus_set()
+        self._terminale_yaz_satir(f"  Template loaded: {sablon['ad']}", "gri")
+
+    def _sablon_kaydet(self, sablon):
+        """Yeni şablon kaydet."""
+        self.sablonlar.append(sablon)
+        sablonlar_kaydet(self.sablonlar)
+
+    def _hata_analiz_butonu_goster(self, hata_mesaji):
+        """Hata analizi için buton göster."""
+        # Son komutu bul
+        if not self.oturum_komutlari:
+            return
+        son_komut = self.oturum_komutlari[-1]
+        
+        self.terminal.configure(state="normal")
+        analiz_frame = ctk.CTkFrame(self.terminal._textbox, fg_color="transparent", height=34)
+        
+        ctk.CTkButton(analiz_frame, text=t(self.dil, "error_analyze"),
+            width=140, height=26,
+            font=ctk.CTkFont(family=FONT, size=11),
+            fg_color="#2a2a3a", hover_color="#3a3a5a",
+            text_color="#c678dd", corner_radius=4,
+            border_width=1, border_color="#3a3a5a",
+            command=lambda: self._hata_analiz_et(hata_mesaji, son_komut)).pack(side="left")
+        
+        self.terminal._textbox.window_create("end", window=analiz_frame)
+        self.terminal._textbox.insert("end", "\n")
+        self.terminal.configure(state="disabled")
+        self.terminal._textbox.see("end")
+
+    def _hata_analiz_et(self, hata_mesaji, basarisiz_komut):
+        """AI ile hatayı analiz et."""
+        self._terminale_yaz_satir(t(self.dil, "error_analyzing"), "gri")
+        self._yukleniyor(True)
+        
+        threading.Thread(target=self._hata_analiz_arkaplan,
+                        args=(hata_mesaji, basarisiz_komut), daemon=True).start()
+
+    def _hata_analiz_arkaplan(self, hata_mesaji, basarisiz_komut):
+        analiz = hatayi_analiz_et(hata_mesaji, basarisiz_komut, self.dil, self.model_id)
+        self.after(0, self._hata_analiz_goster, analiz, basarisiz_komut)
+
+    def _hata_analiz_goster(self, analiz, basarisiz_komut):
+        self._yukleniyor(False)
+        
+        if not analiz:
+            self._terminale_yaz_satir(t(self.dil, "error_no_fix"), "kirmizi")
+            return
+        
+        # Parse analysis
+        satirlar = analiz.split("\n")
+        aciklama = satirlar[0] if satirlar else ""
+        fix_cmd = ""
+        
+        for satir in satirlar:
+            if satir.upper().startswith("FIX:"):
+                fix_cmd = satir[4:].strip()
+                break
+        
+        self._terminale_yaz_satir(f"{t(self.dil, 'error_suggestion')} {aciklama}", "sari")
+        if fix_cmd:
+            self._terminale_yaz_satir(f"{t(self.dil, 'error_fix')} {fix_cmd}", "komut")
+            # Save to error history
+            self.hata_gecmisi.append({
+                "komut": basarisiz_komut,
+                "hata": "Error occurred",
+                "cozum": fix_cmd,
+                "zaman": __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")
+            })
+            self.hata_gecmisi = self.hata_gecmisi[-50:]
+            hata_gecmisi_kaydet(self.hata_gecmisi)
+
+    def _script_olarak_kaydet(self):
+        """Oturumu PowerShell script olarak kaydet."""
+        if not self.oturum_komutlari:
+            self._terminale_yaz_satir("  No commands to export", "gri")
+            return
+        
+        # Basit file dialog
+        dosya_yolu = filedialog.asksaveasfilename(
+            title=t(self.dil, "script_save"),
+            defaultextension=".ps1",
+            filetypes=[("PowerShell Script", "*.ps1"), ("All Files", "*.*")],
+            initialfile=f"lingocli_script_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.ps1"
+        )
+        
+        if not dosya_yolu:
+            return
+        
+        try:
+            with open(dosya_yolu, "w", encoding="utf-8") as f:
+                f.write("# LingoCLI Generated Script\n")
+                f.write(f"# Date: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("# " + "="*60 + "\n\n")
+                
+                for i, komut in enumerate(reversed(self.oturum_komutlari), 1):
+                    f.write(f"# Step {i}\n")
+                    f.write(f"{komut}\n\n")
+            
+            self._terminale_yaz_satir(t(self.dil, "script_saved", f=dosya_yolu), "komut")
+        except Exception as e:
+            self._terminale_yaz_satir(f"  Failed to save script: {e}", "kirmizi")
         tb.tag_configure("kirmizi",   foreground=KIRMIZI)
         tb.tag_configure("gri",       foreground=ACIK_GRI)
         tb.tag_configure("beyaz",     foreground=BEYAZ)
@@ -742,6 +1046,9 @@ class AITerminalAsistani(ctk.CTk):
             placeholder_text_color=GRI)
         self.giris.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.giris.bind("<Return>", lambda e: self._gonder())
+        self.giris.bind("<Up>", self._history_onceki)
+        self.giris.bind("<Down>", self._history_sonraki)
+        self.giris.bind("<Control-k>", lambda e: self._history_arama_ac())
         self.giris.focus_set()
 
     # ──────────────────────────────────────────
@@ -789,6 +1096,20 @@ class AITerminalAsistani(ctk.CTk):
         self._terminale_yaz(self._prompt_metni_al() + " ", "prompt")
         self._terminale_yaz_satir(istek, "kullanici")
         self.giris.delete(0, "end")
+        
+        # Add to command history
+        import datetime
+        yeni_komut = {
+            "komut": istek,
+            "zaman": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "favori": False
+        }
+        self.komut_gecmisi.insert(0, yeni_komut)
+        self.komut_gecmisi = self.komut_gecmisi[:100]  # Keep only last 100
+        self.komut_gecmisi_data["komutlar"] = self.komut_gecmisi
+        gecmis_kaydet(self.komut_gecmisi_data)
+        self.history_index = -1
+        
         self._yukleniyor(True)
         gecmis_kopya = self.gecmis.copy()
         ozet_kopya = self.gecmis_ozet
@@ -913,9 +1234,12 @@ class AITerminalAsistani(ctk.CTk):
                 self._terminale_yaz_satir("", "beyaz")
                 return
 
+        # Add to session commands for script export
+        self.oturum_komutlari.append(komut)
+
         self._terminale_yaz_satir(t(self.dil, "running"), "gri")
         self._yukleniyor(True)
-        
+
         threading.Thread(target=self._komut_calistir_arkaplan, args=(komut,), daemon=True).start()
 
     def _komut_calistir_arkaplan(self, komut: str):
@@ -944,6 +1268,8 @@ class AITerminalAsistani(ctk.CTk):
             self._terminale_yaz_satir(t(self.dil, "success"), "komut")
         else:
             self._terminale_yaz_satir(t(self.dil, "cmd_error"), "kirmizi")
+            # Add error analysis button
+            self._hata_analiz_butonu_goster(cikti)
         self._terminale_yaz_satir("", "beyaz")
 
     def _iptal(self):
@@ -1003,11 +1329,12 @@ class AITerminalAsistani(ctk.CTk):
 
     def _yeni_oturum(self, yaz=True):
         self._mevcut_oturumunu_kaydet()
-        
+
         self.gecmis.clear()
         self.gecmis_ozet = ""
         self.toplam_mesaj = 0
         self.ozetleme_sayisi = 0
+        self.oturum_komutlari.clear()  # Clear session commands
         self.terminal.configure(state="normal")
         self.terminal._textbox.delete("1.0", "end")
         self.terminal.configure(state="disabled")
@@ -1477,6 +1804,253 @@ class BootScreen(ctk.CTk):
         self._cancelled = True
         self.destroy()
 
+# ══════════════════════════════════════════════
+
+
+# ══════════════════════════════════════════════
+#  HISTORY WINDOW
+# ══════════════════════════════════════════════
+
+class HistoryPenceresi(ctk.CTkToplevel):
+    """Komut geçmişi penceresi."""
+    
+    def __init__(self, parent, gecmis, secim_callback, dil="en"):
+        super().__init__(parent)
+        self.title(t(dil, "history_title"))
+        self.geometry("600x500")
+        self.resizable(False, False)
+        self.configure(fg_color="#111111")
+        self.transient(parent)
+        self.grab_set()
+        
+        self.gecmis = gecmis
+        self.secim_callback = secim_callback
+        self.dil = dil
+        
+        # Search box
+        arama_frame = ctk.CTkFrame(self, fg_color="#1a1a1a")
+        arama_frame.pack(fill="x", padx=20, pady=(20, 10))
+        
+        ctk.CTkLabel(arama_frame, text="🔍", font=ctk.CTkFont(size=14), text_color=ACIK_GRI).pack(side="left", padx=(10, 5))
+        
+        self.arama_giris = ctk.CTkEntry(arama_frame,
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color="#1a1a1a", text_color=PARLAK_BEYAZ,
+            border_width=0, placeholder_text=t(dil, "history_search"))
+        self.arama_giris.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self.arama_giris.bind("<KeyRelease>", self._arama_yap)
+        
+        # History list
+        self.liste_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.liste_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        self._liste_guncelle(gecmis)
+        
+        # Close button
+        ctk.CTkButton(self, text="Kapat" if dil=="tr" else "Close",
+            width=100, height=32,
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color="#2a2a2a", hover_color="#3a3a3a",
+            text_color="#cccccc", corner_radius=4,
+            command=self.destroy).pack(pady=(0, 20))
+    
+    def _liste_guncelle(self, gecmis):
+        # Clear existing
+        for widget in self.liste_frame.winfo_children():
+            widget.destroy()
+        
+        if not gecmis:
+            ctk.CTkLabel(self.liste_frame, text=t(self.dil, "history_empty"),
+                font=ctk.CTkFont(family=FONT, size=13), text_color=ACIK_GRI).pack(pady=40)
+            return
+        
+        for item in gecmis[:50]:  # Show max 50
+            satir = ctk.CTkFrame(self.liste_frame, fg_color="#1a1a1a", corner_radius=4)
+            satir.pack(fill="x", pady=2)
+            
+            sol = ctk.CTkFrame(satir, fg_color="transparent")
+            sol.pack(side="left", fill="x", expand=True, padx=10, pady=6)
+            
+            fav_icon = "★ " if item.get("favori", False) else "  "
+            ctk.CTkLabel(sol, text=f"{fav_icon}{item['komut'][:60]}",
+                font=ctk.CTkFont(family=FONT, size=12), text_color=PARLAK_BEYAZ,
+                anchor="w").pack(anchor="w")
+            ctk.CTkLabel(sol, text=item.get("zaman", ""),
+                font=ctk.CTkFont(family=FONT, size=10), text_color=ACIK_GRI,
+                anchor="w").pack(anchor="w")
+            
+            ctk.CTkButton(satir, text=t(self.dil, "history_use"),
+                width=60, height=24,
+                font=ctk.CTkFont(family=FONT, size=11),
+                fg_color="#1a3a1a", hover_color="#2a5a2a",
+                text_color="#16c60c", corner_radius=4,
+                command=lambda k=item['komut']: self._sec(k)).pack(side="right", padx=10)
+    
+    def _arama_yap(self, event=None):
+        arama_metni = self.arama_giris.get().lower()
+        if not arama_metni:
+            self._liste_guncelle(self.gecmis)
+            return
+        
+        filtrelenmis = [item for item in self.gecmis if arama_metni in item["komut"].lower()]
+        self._liste_guncelle(filtrelenmis)
+    
+    def _sec(self, komut):
+        self.destroy()
+        self.secim_callback(komut)
+
+
+# ══════════════════════════════════════════════
+#  TEMPLATES WINDOW
+# ══════════════════════════════════════════════
+
+class SablonPenceresi(ctk.CTkToplevel):
+    """Şablonlar penceresi."""
+    
+    def __init__(self, parent, sablonlar, kullan_callback, kaydet_callback, dil="en"):
+        super().__init__(parent)
+        self.title(t(dil, "templates_title"))
+        self.geometry("650x550")
+        self.resizable(False, False)
+        self.configure(fg_color="#111111")
+        self.transient(parent)
+        self.grab_set()
+        
+        self.sablonlar = sablonlar
+        self.kullan_callback = kullan_callback
+        self.kaydet_callback = kaydet_callback
+        self.dil = dil
+        
+        # Title
+        ctk.CTkLabel(self, text=t(dil, "templates_title"),
+            font=ctk.CTkFont(family=FONT, size=16, weight="bold"),
+            text_color="#cccccc").pack(pady=(20, 10))
+        
+        # Hint
+        ctk.CTkLabel(self, text=t(dil, "templates_hint"),
+            font=ctk.CTkFont(family=FONT, size=11), text_color=ACIK_GRI).pack(pady=(0, 10))
+        
+        # Templates list
+        self.liste_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.liste_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        self._liste_guncelle()
+        
+        # Bottom buttons
+        alt_frame = ctk.CTkFrame(self, fg_color="transparent")
+        alt_frame.pack(pady=10)
+        
+        ctk.CTkButton(alt_frame, text=t(dil, "templates_new"),
+            width=140, height=32,
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color="#1a3a1a", hover_color="#2a5a2a",
+            text_color="#16c60c", corner_radius=4,
+            command=self._yeni_sablon_ekle).pack(side="left", padx=6)
+        
+        ctk.CTkButton(alt_frame, text="Kapat" if dil=="tr" else "Close",
+            width=100, height=32,
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color="#2a2a2a", hover_color="#3a3a3a",
+            text_color="#cccccc", corner_radius=4,
+            command=self.destroy).pack(side="left", padx=6)
+    
+    def _liste_guncelle(self):
+        for widget in self.liste_frame.winfo_children():
+            widget.destroy()
+        
+        if not self.sablonlar:
+            ctk.CTkLabel(self.liste_frame, text=t(self.dil, "templates_empty"),
+                font=ctk.CTkFont(family=FONT, size=13), text_color=ACIK_GRI).pack(pady=40)
+            return
+        
+        for i, sablon in enumerate(self.sablonlar):
+            satir = ctk.CTkFrame(self.liste_frame, fg_color="#1a1a1a", corner_radius=4)
+            satir.pack(fill="x", pady=3)
+            
+            sol = ctk.CTkFrame(satir, fg_color="transparent")
+            sol.pack(side="left", fill="x", expand=True, padx=10, pady=8)
+            
+            ctk.CTkLabel(sol, text=f"📋 {sablon['ad']}",
+                font=ctk.CTkFont(family=FONT, size=13, weight="bold"),
+                text_color="#16c60c", anchor="w").pack(anchor="w")
+            ctk.CTkLabel(sol, text=sablon.get("aciklama", ""),
+                font=ctk.CTkFont(family=FONT, size=11), text_color=ACIK_GRI,
+                anchor="w").pack(anchor="w")
+            ctk.CTkLabel(sol, text=sablon['komut'][:70] + ("..." if len(sablon['komut']) > 70 else ""),
+                font=ctk.CTkFont(family=FONT, size=10), text_color=GRI,
+                anchor="w").pack(anchor="w")
+            
+            ctk.CTkButton(satir, text=t(self.dil, "templates_use"),
+                width=60, height=24,
+                font=ctk.CTkFont(family=FONT, size=11),
+                fg_color="#1a3a1a", hover_color="#2a5a2a",
+                text_color="#16c60c", corner_radius=4,
+                command=lambda s=sablon: self._kullan(s)).pack(side="right", padx=(0, 6))
+            
+            ctk.CTkButton(satir, text="🗑️",
+                width=40, height=24,
+                font=ctk.CTkFont(family=FONT, size=11),
+                fg_color="#3a1a1a", hover_color="#5a2a2a",
+                text_color=KIRMIZI, corner_radius=4,
+                command=lambda idx=i: self._sil(idx)).pack(side="right")
+    
+    def _kullan(self, sablon):
+        self.destroy()
+        self.kullan_callback(sablon)
+    
+    def _sil(self, index):
+        if 0 <= index < len(self.sablonlar):
+            self.sablonlar.pop(index)
+            sablonlar_kaydet(self.sablonlar)
+            self._liste_guncelle()
+    
+    def _yeni_sablon_ekle(self):
+        """Yeni şablon ekleme formu."""
+        form = ctk.CTkToplevel(self)
+        form.title(t(self.dil, "templates_new"))
+        form.geometry("500x350")
+        form.resizable(False, False)
+        form.configure(fg_color="#111111")
+        form.transient(self)
+        form.grab_set()
+        
+        ctk.CTkLabel(form, text=t(self.dil, "templates_name"),
+            font=ctk.CTkFont(family=FONT, size=12), text_color="#cccccc").pack(anchor="w", padx=20, pady=(20, 5))
+        ad_giris = ctk.CTkEntry(form, font=ctk.CTkFont(family=FONT, size=12), fg_color="#1a1a1a", text_color=PARLAK_BEYAZ)
+        ad_giris.pack(fill="x", padx=20, pady=(0, 10))
+        
+        ctk.CTkLabel(form, text=t(self.dil, "templates_cmd"),
+            font=ctk.CTkFont(family=FONT, size=12), text_color="#cccccc").pack(anchor="w", padx=20, pady=(10, 5))
+        cmd_giris = ctk.CTkTextbox(form, font=ctk.CTkFont(family=FONT, size=12), fg_color="#1a1a1a", text_color=PARLAK_BEYAZ, height=80)
+        cmd_giris.pack(fill="x", padx=20, pady=(0, 10))
+        
+        ctk.CTkLabel(form, text=t(self.dil, "templates_desc"),
+            font=ctk.CTkFont(family=FONT, size=12), text_color="#cccccc").pack(anchor="w", padx=20, pady=(10, 5))
+        desc_giris = ctk.CTkEntry(form, font=ctk.CTkFont(family=FONT, size=12), fg_color="#1a1a1a", text_color=PARLAK_BEYAZ)
+        desc_giris.pack(fill="x", padx=20, pady=(0, 20))
+        
+        def kaydet():
+            ad = ad_giris.get().strip()
+            cmd = cmd_giris.get("1.0", "end").strip()
+            desc = desc_giris.get().strip()
+            
+            if not ad or not cmd:
+                return
+            
+            yeni_sablon = {"ad": ad, "komut": cmd, "aciklama": desc}
+            self.kaydet_callback(yeni_sablon)
+            self._liste_guncelle()
+            form.destroy()
+        
+        ctk.CTkButton(form, text=t(self.dil, "templates_save"),
+            width=120, height=32,
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color="#1a3a1a", hover_color="#2a5a2a",
+            text_color="#16c60c", corner_radius=4,
+            command=kaydet).pack(pady=(0, 20))
+
+
 if __name__ == "__main__":
+
     boot = BootScreen()
     boot.mainloop()
