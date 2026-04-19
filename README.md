@@ -67,18 +67,17 @@ A regex-based security kalkan (shield) audits every AI-generated command. Destru
 ### 1. Requirements
 *   **OS**: Windows 10/11 (with PowerShell)
 *   **Hardware**: 8GB+ RAM recommended (for local LLM)
-*   **Software**: [LM Studio](https://lmstudio.ai)
+*   **Software**: [LM Studio](https://lmstudio.ai) and the **LM Studio CLI** (`lms` command) installed and added to the system PATH.
 
 ### 2. Prepare the AI (LM Studio)
 1.  Download and install **LM Studio**.
-2.  Search for and download the **Recommended Model**: `Qwen 3.5 4B` (or Qwen 2.5 3B/7B for peak performance).
-3.  Navigate to the **AI Chat / Local Server** tab.
-4.  Load the model and **Start Server** on port `1234`.
+2.  Install the **LM Studio CLI** (usually included in recent versions, open LM Studio -> Server -> Install 'lms' command).
+3.  Search for and download the **Recommended Model**: `Qwen 3.5 4B` (or Qwen 2.5 3B/7B for peak performance).
 
 ### 3. Launch LingoCLI
 1.  Navigate to the `dist` folder.
 2.  Run **`AI_Terminal.exe`**.
-3.  The app will automatically detect your model and workspace—you're ready to go!
+3.  The app will automatically use `lms` CLI to list your models, let you select one, and start the server automatically!
 
 ---
 
