@@ -753,8 +753,8 @@ class AITerminalAsistani(ctk.CTk):
         self._giris_satiri()
         self._ortala()
 
-        # Dinamik Model Tespiti başlat
-        self.after(500, self._dinamik_model_tespit_et)
+        # Sunucudaki aktif modeli tespit et
+        self.after(800, self._model_id_guncelle)
 
         self._hosgeldin_yaz()
 
@@ -1762,6 +1762,22 @@ class AITerminalAsistani(ctk.CTk):
         self.hafiza_lbl.configure(
             text=f"{t(self.dil, 'memory')}: {yuzde}%", text_color=renk)
 
+    def _model_id_guncelle(self):
+        """Sunucuda yüklü aktif modeli API'den okur ve UI'ı günceller."""
+        try:
+            r = requests.get("http://localhost:1234/v1/models", timeout=3)
+            if r.status_code == 200:
+                data = r.json()
+                if "data" in data and len(data["data"]) > 0:
+                    model_id = data["data"][0]["id"]
+                    self.model_id = model_id
+                    self.model_adi = model_id.split("/")[-1].replace(".gguf", "").replace("-", " ").title()
+                    if hasattr(self, "model_bilgi_lbl"):
+                        self.model_bilgi_lbl.configure(text=f"[{self.model_adi}] {MODEL_CONTEXT}")
+                    return
+        except Exception as e:
+            log_mesaj(f"Model ID güncellenemedi: {e}", "WARNING")
+
     def _yukleniyor(self, aktif: bool):
         if aktif:
             self.giris.configure(state="disabled")
@@ -2167,9 +2183,10 @@ class BootScreen(ctk.CTk):
     # —— Başarılı başlatılma ——
     def _boot_basarili(self):
         self.progress.stop()
-        self.destroy()
+        self.withdraw()  # Gizle ama CTk root'u sağlam tut
         uygulama = AITerminalAsistani()
         uygulama.mainloop()
+        self.destroy()   # Ana uygulama kapanınca boot screen temizlenir
 
     # —— Hata ekranı ——
     def _hata_butonlari_goster(self):
@@ -2205,9 +2222,10 @@ class BootScreen(ctk.CTk):
     def _manuel_devam(self):
         """Kontrolleri atla, doğrudan ana uygulamaya geç."""
         self._cancelled = True
-        self.destroy()
+        self.withdraw()
         uygulama = AITerminalAsistani()
         uygulama.mainloop()
+        self.destroy()
 
     def _yeniden_dene(self):
         """Kontrol sürecini yeniden başlat."""
