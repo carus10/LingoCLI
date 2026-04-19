@@ -1518,8 +1518,17 @@ class AITerminalAsistani(ctk.CTk):
         self._terminale_yaz_satir(t(self.dil, "settings_saved"), "komut")
 
     def _uygulama_kapat(self):
-        """Uygulama kapanırken workspace hafızasını kaydet."""
+        """Uygulama kapanırken workspace hafızasını kaydeder ve sunucuyu durdurur."""
         self._mevcut_oturumunu_kaydet()
+        # LM Studio sunucusunu kapat (arka planda kalmasın)
+        try:
+            subprocess.Popen(
+                ["lms", "server", "stop"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+        except Exception:
+            pass
         self.destroy()
 
     # ──────────────────────────────────────────
@@ -1753,28 +1762,6 @@ class AITerminalAsistani(ctk.CTk):
         self.hafiza_lbl.configure(
             text=f"{t(self.dil, 'memory')}: {yuzde}%", text_color=renk)
 
-    def _dinamik_model_tespit_et(self):
-        """LM Studio'daki aktif modeli algılar ve hem ismi hem de tam ID'yi kaydeder."""
-        try:
-            r = requests.get(LMS_CHECK_URL, timeout=2)
-            if r.status_code == 200:
-                data = r.json()
-                if "data" in data and len(data["data"]) > 0:
-                    model_id = data["data"][0]["id"]
-                    self.model_id = model_id  # API için tam ID
-                    # Kullanıcı dostu isim
-                    self.model_adi = model_id.split("/")[-1].replace(".gguf", "").replace("-", " ").title()
-                    if hasattr(self, "model_bilgi_lbl"):
-                        self.model_bilgi_lbl.configure(text=f"[{self.model_adi}] {MODEL_CONTEXT}")
-                    return
-        except Exception as e:
-            log_mesaj(f"Model detection error: {e}", "WARNING")
-            
-        self.model_adi = "Local AI"
-        self.model_id = MODEL
-        if hasattr(self, "model_bilgi_lbl"):
-            self.model_bilgi_lbl.configure(text=f"[{self.model_adi}] {MODEL_CONTEXT}")
-
     def _yukleniyor(self, aktif: bool):
         if aktif:
             self.giris.configure(state="disabled")
@@ -1786,25 +1773,29 @@ class AITerminalAsistani(ctk.CTk):
             self.giris.focus_set()
 
 
-# ══════════════════════════════════════════════
-#  BOOT SCREEN — LM Studio Auto-Launch
-# ══════════════════════════════════════════════
-
-# Known LM Studio paths (checked in order)
-LMS_PATHS = [
-    r"C:\Program Files\LM Studio\LM Studio.exe",
-    r"C:\Program Files (x86)\LM Studio\LM Studio.exe",
-    os.path.expandvars(r"%LOCALAPPDATA%\Programs\LM Studio\LM Studio.exe"),
-    os.path.expandvars(r"%LOCALAPPDATA%\LM Studio\LM Studio.exe"),
-    os.path.expandvars(r"%APPDATA%\LM Studio\LM Studio.exe"),
-]
+# ════════════════════════════════════════════
+#  LMS CLI HELPERS
+# ════════════════════════════════════════════
 
 LMS_CHECK_URL = "http://localhost:1234/v1/models"
-LMS_TIMEOUT   = 90  # Max seconds to wait for server
+LMS_TIMEOUT   = 60  # Max seconds to wait for server
+
+
+def lms_mevcut_mu() -> bool:
+    """'lms' CLI komutunun sistemde olup olmadığını kontrol eder."""
+    try:
+        result = subprocess.run(
+            ["lms", "--version"],
+            capture_output=True, text=True, timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+        return False
 
 
 def sunucu_aktif_mi() -> bool:
-    """Check if LM Studio server is running on port 1234."""
+    """Port 1234'te LM Studio sunucusunun çalışıp çalışmadığını kontrol eder."""
     try:
         r = requests.get(LMS_CHECK_URL, timeout=3)
         return r.status_code == 200
@@ -1812,206 +1803,438 @@ def sunucu_aktif_mi() -> bool:
         return False
 
 
-def lm_studio_yolunu_bul() -> str:
-    """Find LM Studio executable path."""
-    for yol in LMS_PATHS:
-        if os.path.exists(yol):
-            return yol
-    # Fallback: search running process
+def yuklu_modelleri_listele() -> list:
+    """
+    `lms ls` komutunun çıktısını parse ederek yüklü model listesini döndürür.
+    Her eleman: {"key": str, "params": str, "arch": str, "size": str}
+    Embedding modelleri hàriç tutulur.
+    """
+    modeller = []
     try:
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command",
-             'Get-Process -Name "LM Studio" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Path'],
-            capture_output=True, text=True, timeout=5
+            ["lms", "ls"],
+            capture_output=True, text=True, timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW
         )
-        yol = result.stdout.strip()
-        if yol and os.path.exists(yol):
-            return yol
-    except Exception:
-        pass
-    return ""
+        satirlar = result.stdout.split("\n")
+        
+        llm_bolumu = False
+        for satir in satirlar:
+            s = satir.strip()
+            if not s:
+                continue
+            # 'LLM' başlığı görültünce LLM bölümüne girdik
+            if s.upper().startswith("LLM"):
+                llm_bolumu = True
+                continue
+            # 'EMBEDDING' bölümüne geçtik, LLM bölümü bitti
+            if "EMBEDDING" in s.upper():
+                llm_bolumu = False
+                continue
+            # Başlık satırı (PARAMS, ARCH vb.) atlanır
+            if "PARAMS" in s.upper() and "ARCH" in s.upper():
+                continue
+            if llm_bolumu and s and not s.startswith("-"):
+                # Satırı bolumlere ayır
+                parcalar = s.split()
+                if parcalar:
+                    # İlk parça model anahtarı
+                    anahtar = parcalar[0]
+                    # "(X variant)" gibi parantez ifadesini temizle
+                    if anahtar.endswith("("):
+                        anahtar = parcalar[0].rstrip("(")
+                    params = parcalar[1] if len(parcalar) > 1 else ""
+                    arch   = parcalar[2] if len(parcalar) > 2 else ""
+                    boyut  = parcalar[3] if len(parcalar) > 3 else ""
+                    # Parantez içerikleri olan satırları ("(1 variant)" gibi) atla
+                    if "variant" in s.lower():
+                        # Model adı parantezden önce alınır
+                        kalan = s.split("(")[0].strip()
+                        anahtar = kalan
+                        bolumler = s.split("(")[1].split(")")[0] if "(" in s else ""
+                    modeller.append({
+                        "key":    anahtar,
+                        "params": params,
+                        "arch":   arch,
+                        "size":   boyut,
+                        "display": f"{anahtar}  [{params}]".strip()
+                    })
+    except Exception as e:
+        log_mesaj(f"Model listesi alinamadi: {e}", "WARNING")
+    return modeller
 
+
+def sunucuyu_baslat() -> bool:
+    """
+    `lms server start` komutunu arka planda çalıştırır.
+    True: başlatıldı, False: başlatılamadı.
+    """
+    try:
+        subprocess.Popen(
+            ["lms", "server", "start"],
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        return True
+    except Exception as e:
+        log_mesaj(f"Sunucu baslatilamadi: {e}", "ERROR")
+        return False
+
+
+def modeli_yukle(model_key: str) -> bool:
+    """
+    `lms load <model_key> -y` komutuyla modeli sunucuya yükler.
+    True: başarılı, False: başarısız.
+    """
+    try:
+        result = subprocess.run(
+            ["lms", "load", model_key, "-y"],
+            capture_output=True, text=True, timeout=120,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        return result.returncode == 0
+    except Exception as e:
+        log_mesaj(f"Model yuklenemedi: {e}", "ERROR")
+        return False
+
+
+# ════════════════════════════════════════════
+#  MODEL SEÇİM EKRANI
+# ════════════════════════════════════════════
+
+class ModelSecimEkrani(ctk.CTkToplevel):
+    """Yüklü LLM modelleri listeleyen seçim penceresi."""
+
+    def __init__(self, parent, modeller: list, secim_callback, dil: str = "en"):
+        super().__init__(parent)
+        self.dil = dil
+        self.secim_callback = secim_callback
+        self.title(t(dil, "boot_select_model"))
+        self.geometry("560x440")
+        self.resizable(False, False)
+        self.configure(fg_color="#0c0c0c")
+        self.transient(parent)
+        self.grab_set()
+        # Pencere kapatılırsa uygulamayı also kapat
+        self.protocol("WM_DELETE_WINDOW", lambda: parent._quit())
+
+        # Ekran ortalama
+        self.update_idletasks()
+        pw = parent.winfo_x() + parent.winfo_width() // 2
+        ph = parent.winfo_y() + parent.winfo_height() // 2
+        self.geometry(f"560x440+{pw - 280}+{ph - 220}")
+
+        # Başlık
+        ctk.CTkLabel(self,
+            text="🤖 " + t(dil, "boot_select_model"),
+            font=ctk.CTkFont(family=FONT, size=20, weight="bold"),
+            text_color="#c678dd").pack(pady=(24, 4))
+
+        ctk.CTkLabel(self,
+            text=t(dil, "boot_model_hint"),
+            font=ctk.CTkFont(family=FONT, size=12),
+            text_color=ACIK_GRI).pack(pady=(0, 16))
+
+        # Model listesi
+        liste = ctk.CTkScrollableFrame(self,
+            fg_color="#111111", corner_radius=8,
+            height=260)
+        liste.pack(fill="x", padx=24, pady=(0, 16))
+
+        for model in modeller:
+            self._model_satiri_olustur(liste, model)
+
+        # Altını iptali
+        ctk.CTkButton(self,
+            text=t(dil, "boot_quit"),
+            width=120, height=32,
+            font=ctk.CTkFont(family=FONT, size=12),
+            fg_color="#3a1a1a", hover_color="#5a2a2a",
+            text_color=KIRMIZI, corner_radius=4,
+            command=lambda: parent._quit()).pack(pady=(0, 20))
+
+    def _model_satiri_olustur(self, parent_frame, model: dict):
+        satir = ctk.CTkFrame(parent_frame, fg_color="#1a1a1a", corner_radius=6)
+        satir.pack(fill="x", padx=4, pady=5)
+
+        sol = ctk.CTkFrame(satir, fg_color="transparent")
+        sol.pack(side="left", fill="both", expand=True, padx=12, pady=10)
+
+        # Model adı
+        ctk.CTkLabel(sol,
+            text=model["key"],
+            font=ctk.CTkFont(family=FONT, size=13, weight="bold"),
+            text_color="#c678dd", anchor="w").pack(anchor="w")
+
+        # Meta bilgi
+        meta = ""
+        if model.get("params"): meta += f"{model['params']}"
+        if model.get("arch"):   meta += f"  •  {model['arch'].upper()}"
+        if model.get("size"):   meta += f"  •  {model['size']}"
+        if meta:
+            ctk.CTkLabel(sol,
+                text=meta,
+                font=ctk.CTkFont(family=FONT, size=11),
+                text_color=ACIK_GRI, anchor="w").pack(anchor="w")
+
+        # Seç butonu
+        ctk.CTkButton(satir,
+            text=t(self.dil, "boot_btn_select"),
+            width=120, height=30,
+            font=ctk.CTkFont(family=FONT, size=12, weight="bold"),
+            fg_color="#1a3a1a", hover_color="#2a5a2a",
+            text_color="#16c60c", corner_radius=4,
+            command=lambda mk=model["key"]: self._sec(mk)).pack(side="right", padx=12)
+
+    def _sec(self, model_key: str):
+        self.grab_release()
+        self.destroy()
+        self.secim_callback(model_key)
+
+
+# ════════════════════════════════════════════
+#  BOOT SCREEN — LMS CLI Auto-Launch
+# ════════════════════════════════════════════
 
 class BootScreen(ctk.CTk):
-    """Startup screen: checks LM Studio, auto-launches if needed."""
+    """
+    Başlangıç ekranı: 'lms' CLI ile yüklü modelleri listeler,
+    kullanıcının seçtiği modeli yükler, sunucuyu başlatır.
+    Uygulama kapatılınca sunucu otomatik durdurulur.
+    """
 
     def __init__(self):
         super().__init__()
 
         ayarlar = ayarlari_yukle()
         self.dil = ayarlar.get("dil", "en")
+        self._secilen_model = None
+        self._cancelled = False
+        self._sunucu_biz_mi_baslattik = False  # Sadece biz başlattıysak kapatırız
 
         self.title(t(self.dil, "boot_title"))
-        self.geometry("480x260")
+        self.geometry("480x280")
         self.resizable(False, False)
         self.configure(fg_color="#0c0c0c")
         if os.path.exists(ICON_PATH):
             self.iconbitmap(ICON_PATH)
             self.after(200, lambda: self.iconbitmap(ICON_PATH))
 
-        # Center
+        # Ortala
         self.update_idletasks()
-        x = (self.winfo_screenwidth() // 2) - 240
-        y = (self.winfo_screenheight() // 2) - 130
-        self.geometry(f"480x260+{x}+{y}")
+        x = (self.winfo_screenwidth()  // 2) - 240
+        y = (self.winfo_screenheight() // 2) - 140
+        self.geometry(f"480x280+{x}+{y}")
 
-        # Header
-        ctk.CTkLabel(self, text=t(self.dil, "bar_title").strip(),
+        # Başlık
+        ctk.CTkLabel(self,
+            text=t(self.dil, "bar_title").strip(),
             font=ctk.CTkFont(family=FONT, size=24, weight="bold"),
-            text_color="#c678dd").pack(pady=(30, 8))
+            text_color="#c678dd").pack(pady=(28, 6))
 
-        # Status label
+        # Durum etiketi
         self.status_lbl = ctk.CTkLabel(self,
             text=t(self.dil, "boot_checking"),
             font=ctk.CTkFont(family=FONT, size=13),
             text_color=ACIK_GRI)
-        self.status_lbl.pack(pady=(0, 16))
+        self.status_lbl.pack(pady=(0, 14))
 
         # Progress bar
         self.progress = ctk.CTkProgressBar(self,
             width=360, height=10, corner_radius=5,
             fg_color="#2a2a2a", progress_color="#c678dd",
             border_width=0, mode="indeterminate")
-        self.progress.pack(pady=(0, 16))
+        self.progress.pack(pady=(0, 14))
         self.progress.start()
 
-        # Detail label
+        # Detay etiketi
         self.detail_lbl = ctk.CTkLabel(self, text="",
             font=ctk.CTkFont(family=FONT, size=11),
             text_color=GRI)
-        self.detail_lbl.pack(pady=(0, 8))
+        self.detail_lbl.pack(pady=(0, 6))
 
-        # Button frame (hidden initially)
+        # Buton çerçevesi (başlat basit gizli)
         self.btn_frame = ctk.CTkFrame(self, fg_color="transparent")
 
-        self._cancelled = False
-        self.after(500, self._start_check)
+        self.after(400, self._akis_baslat)
 
-    def _start_check(self):
-        threading.Thread(target=self._check_and_launch, daemon=True).start()
+    # —— yardımcı güncelleyiciler ——
+    def _durum_guncelle(self, metin, renk):
+        self.status_lbl.configure(text=metin, text_color=renk)
 
-    def _check_and_launch(self):
-        # Step 1: Is server already running?
-        if sunucu_aktif_mi():
-            self.after(0, self._update_status, t(self.dil, "boot_found"), "#16c60c")
-            self.after(800, self._boot_success)
-            return
+    def _detay_guncelle(self, metin):
+        self.detail_lbl.configure(text=metin)
 
-        # Step 2: Find LM Studio
-        self.after(0, self._update_status, t(self.dil, "boot_not_found"), SARI)
-        lms_path = lm_studio_yolunu_bul()
+    # —— Ana akış ——
+    def _akis_baslat(self):
+        threading.Thread(target=self._akis_arkaplan, daemon=True).start()
 
-        if not lms_path:
-            self.after(0, self._show_not_installed)
-            return
-
-        # Step 3: Launch LM Studio
-        self.after(0, self._update_status, t(self.dil, "boot_launching"), "#c678dd")
-        try:
-            subprocess.Popen([lms_path], shell=False,
-                             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW)
-        except Exception:
-            # Try with shell
-            try:
-                os.startfile(lms_path)
-            except Exception:
-                self.after(0, self._show_not_installed)
-                return
-
-        # Step 4: Wait for server to come online
+    def _akis_arkaplan(self):
         import time
+
+        # 1. 'lms' CLI mevcut mu?
+        self.after(0, self._durum_guncelle,
+                   t(self.dil, "boot_fetching"), ACIK_GRI)
+        if not lms_mevcut_mu():
+            self.after(0, self._durum_guncelle,
+                       t(self.dil, "boot_lms_missing"), KIRMIZI)
+            self.after(0, self._hata_butonlari_goster)
+            return
+
+        # 2. Sunucu zaten çalışıyor mu?
+        if sunucu_aktif_mi():
+            self.after(0, self._durum_guncelle,
+                       t(self.dil, "boot_found"), "#16c60c")
+            # Sunucu vardı — sadece model seçtirip başlat
+            self.after(500, self._model_listele_ve_sec)
+            return
+
+        # 3. Sunucu yok — başlat
+        self.after(0, self._durum_guncelle,
+                   t(self.dil, "boot_server_starting"), "#c678dd")
+        if not sunucuyu_baslat():
+            self.after(0, self._durum_guncelle,
+                       t(self.dil, "boot_lms_not_installed"), KIRMIZI)
+            self.after(0, self._hata_butonlari_goster)
+            return
+
+        self._sunucu_biz_mi_baslattik = True
+
+        # 4. Sunucunun açılmasını bekle
         waited = 0
         while waited < LMS_TIMEOUT and not self._cancelled:
             time.sleep(2)
             waited += 2
-            self.after(0, self._update_detail,
+            self.after(0, self._detay_guncelle,
                        t(self.dil, "boot_waiting", s=waited))
             if sunucu_aktif_mi():
-                self.after(0, self._update_status, t(self.dil, "boot_ready"), "#16c60c")
-                self.after(1000, self._boot_success)
+                self.after(0, self._durum_guncelle,
+                           t(self.dil, "boot_server_running"), "#16c60c")
+                self.after(300, self._model_listele_ve_sec)
                 return
 
         if not self._cancelled:
-            self.after(0, self._show_failed)
+            self.after(0, self._durum_guncelle,
+                       t(self.dil, "boot_failed", s=LMS_TIMEOUT), KIRMIZI)
+            self.after(0, self._hata_butonlari_goster)
 
-    def _update_status(self, text, color):
-        self.status_lbl.configure(text=text, text_color=color)
+    # —— Model listeleme ve seçim ——
+    def _model_listele_ve_sec(self):
+        """Modelleri arka planda al, sonra seçim ekranını göster."""
+        self._durum_guncelle(t(self.dil, "boot_fetching"), ACIK_GRI)
+        threading.Thread(target=self._model_listele_arkaplan, daemon=True).start()
 
-    def _update_detail(self, text):
-        self.detail_lbl.configure(text=text)
+    def _model_listele_arkaplan(self):
+        modeller = yuklu_modelleri_listele()
+        self.after(0, self._model_listesi_geldi, modeller)
 
-    def _boot_success(self):
+    def _model_listesi_geldi(self, modeller: list):
+        if not modeller:
+            self._durum_guncelle(t(self.dil, "boot_no_models"), SARI)
+            self._hata_butonlari_goster()
+            return
+
+        self.progress.stop()
+        # Model seçim penceresini aç
+        ModelSecimEkrani(self, modeller, self._model_secildi, self.dil)
+
+    def _model_secildi(self, model_key: str):
+        """Kullanıcı modeli seçti — sunucuya yükle."""
+        self._secilen_model = model_key
+        self.progress.configure(mode="indeterminate")
+        self.progress.start()
+        self._durum_guncelle(
+            t(self.dil, "boot_model_loading", m=model_key), "#c678dd")
+        threading.Thread(target=self._model_yukle_arkaplan,
+                         args=(model_key,), daemon=True).start()
+
+    def _model_yukle_arkaplan(self, model_key: str):
+        basarili = modeli_yukle(model_key)
+        self.after(0, self._model_yukleme_tamamlandi, basarili, model_key)
+
+    def _model_yukleme_tamamlandi(self, basarili: bool, model_key: str):
+        if basarili:
+            self._durum_guncelle(
+                t(self.dil, "boot_model_loaded"), "#16c60c")
+            self.after(800, self._boot_basarili)
+        else:
+            self.progress.stop()
+            self._durum_guncelle(
+                t(self.dil, "boot_model_err"), KIRMIZI)
+            # Tekrar seçim imkânı ver
+            self.after(1500, self._model_listele_ve_sec)
+
+    # —— Başarılı başlatılma ——
+    def _boot_basarili(self):
         self.progress.stop()
         self.destroy()
         uygulama = AITerminalAsistani()
         uygulama.mainloop()
 
-    def _show_not_installed(self):
+    # —— Hata ekranı ——
+    def _hata_butonlari_goster(self):
         self.progress.stop()
         self.progress.configure(mode="determinate")
         self.progress.set(0)
-        self._update_status(t(self.dil, "boot_lms_not_installed"), KIRMIZI)
-        self._show_buttons()
-
-    def _show_failed(self):
-        self.progress.stop()
-        self.progress.configure(mode="determinate")
-        self.progress.set(0)
-        self._update_status(
-            t(self.dil, "boot_failed", s=LMS_TIMEOUT).split("\n")[0], KIRMIZI)
-        self._update_detail(
-            t(self.dil, "boot_failed", s=LMS_TIMEOUT).split("\n")[-1])
-        self._show_buttons()
-
-    def _show_buttons(self):
         self.btn_frame.pack(pady=(8, 0))
 
-        ctk.CTkButton(self.btn_frame, text=t(self.dil, "boot_manual"),
-            width=120, height=32,
+        ctk.CTkButton(self.btn_frame,
+            text=t(self.dil, "boot_manual"),
+            width=130, height=32,
             font=ctk.CTkFont(family=FONT, size=12),
             fg_color="#1a3a1a", hover_color="#2a5a2a",
             text_color="#16c60c", corner_radius=4,
-            command=self._manual_start).pack(side="left", padx=6)
+            command=self._manuel_devam).pack(side="left", padx=6)
 
-        ctk.CTkButton(self.btn_frame, text=t(self.dil, "boot_retry"),
+        ctk.CTkButton(self.btn_frame,
+            text=t(self.dil, "boot_retry"),
             width=100, height=32,
             font=ctk.CTkFont(family=FONT, size=12),
             fg_color="#2a2a3a", hover_color="#3a3a5a",
             text_color="#c678dd", corner_radius=4,
-            command=self._retry).pack(side="left", padx=6)
+            command=self._yeniden_dene).pack(side="left", padx=6)
 
-        ctk.CTkButton(self.btn_frame, text=t(self.dil, "boot_quit"),
+        ctk.CTkButton(self.btn_frame,
+            text=t(self.dil, "boot_quit"),
             width=80, height=32,
             font=ctk.CTkFont(family=FONT, size=12),
             fg_color="#3a1a1a", hover_color="#5a2a2a",
             text_color=KIRMIZI, corner_radius=4,
             command=self._quit).pack(side="left", padx=6)
 
-    def _manual_start(self):
-        """Skip check, go directly to main app."""
+    def _manuel_devam(self):
+        """Kontrolleri atla, doğrudan ana uygulamaya geç."""
         self._cancelled = True
         self.destroy()
         uygulama = AITerminalAsistani()
         uygulama.mainloop()
 
-    def _retry(self):
-        """Restart the check process."""
+    def _yeniden_dene(self):
+        """Kontrol sürecini yeniden başlat."""
         self._cancelled = True
         self.btn_frame.pack_forget()
         for w in self.btn_frame.winfo_children():
             w.destroy()
         self.progress.configure(mode="indeterminate")
         self.progress.start()
-        self._update_status(t(self.dil, "boot_checking"), ACIK_GRI)
-        self._update_detail("")
+        self._durum_guncelle(t(self.dil, "boot_checking"), ACIK_GRI)
+        self._detay_guncelle("")
         self._cancelled = False
-        self.after(500, self._start_check)
+        self.after(400, self._akis_baslat)
 
     def _quit(self):
         self._cancelled = True
+        # Sunucuyu biz başlattıysak durdur
+        if self._sunucu_biz_mi_baslattik:
+            try:
+                subprocess.Popen(
+                    ["lms", "server", "stop"],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+            except Exception:
+                pass
         self.destroy()
-
-# ══════════════════════════════════════════════
 
 
 # ══════════════════════════════════════════════
